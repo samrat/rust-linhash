@@ -94,6 +94,7 @@ impl<K, V> LinHash<K, V>
         false
     }
 
+    /// Does the hashmap contain a record with key `key`?
     pub fn contains(&mut self, key: K) -> bool {
         match self.get(key) {
             Some(_) => true,
@@ -101,6 +102,7 @@ impl<K, V> LinHash<K, V>
         }
     }
 
+    /// Returns index of record with key `key` if present.
     fn search_bucket(&self, bucket_index: usize, key: &K) -> Option<usize> {
         let bucket = &self.buckets[bucket_index];
         for (i, &(ref k, ref _v)) in bucket.iter().enumerate() {
@@ -111,6 +113,7 @@ impl<K, V> LinHash<K, V>
         None
     }
 
+    /// Update the mapping of record with key `key`.
     pub fn update(&mut self, key: K, val: V) -> bool {
         let bucket_index = self.bucket(&key);
         let index_to_update = self.search_bucket(bucket_index, &key);
