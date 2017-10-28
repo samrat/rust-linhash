@@ -91,11 +91,6 @@ impl<K, V> LinHash<K, V>
         self.r += 1;
 
         self.maybe_split();
-        // loop {
-        //     if !self.maybe_split() {
-        //         break;
-        //     }
-        // }
     }
 
     pub fn get(&self, key: K) -> Option<V> {
