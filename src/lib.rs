@@ -9,12 +9,13 @@ pub struct LinHash<K, V> {
     i: usize,                   // no of bits used from hash
     r: usize,                   // number of items in hashtable
     n: usize,                   // number of buckets
-    threshold: f32,
 }
 
 impl<K, V> LinHash<K, V>
-    where K: Eq + Hash + Display + Debug + Clone,
+    where K: PartialEq + Hash + Display + Debug + Clone,
           V: Clone + Debug {
+
+    const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
     pub fn new() -> LinHash<K, V> {
@@ -26,7 +27,6 @@ impl<K, V> LinHash<K, V>
             i: i,
             r: r,
             n: n,
-            threshold: 0.8,
         }
     }
 
@@ -56,7 +56,7 @@ impl<K, V> LinHash<K, V>
     /// Returns true if the average number of records per bucket(r/n)
     /// exceeds `threshold`
     fn split_needed(&self) -> bool {
-        (self.r as f32 / self.n as f32) > self.threshold
+        (self.r as f32 / self.n as f32) > LinHash::<K,V>::THRESHOLD
     }
 
     /// If necessary, allocates new bucket. If there's no more space
