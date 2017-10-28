@@ -50,7 +50,6 @@ impl<K, V> LinHash<K, V>
                 bucket - (1 << (self.i-1))
             };
 
-        println!("{} hash: {} bucket: {}, adjusted: {}", key, hash, bucket, adjusted_bucket_index);
         adjusted_bucket_index
     }
 
@@ -74,20 +73,22 @@ impl<K, V> LinHash<K, V>
                 self.i += 1;
             }
             
-            // eg: after bucket 11 is added, bucket 01 needs to be
-            // split
+            // Take index of last item added(the `push` above) and
+            // subtract the 1 at the MSB position. eg: after bucket 11
+            // is added, bucket 01 needs to be split
             let bucket_to_split = (self.n-1) ^ (1 << (self.i-1));
-            println!("bucket_to_split: {}(0b{:b}) n: {} i: {}",
-                     bucket_to_split, bucket_to_split, self.n, self.i);
 
+            // Copy the bucket we are about to split
             let old_bucket = self.buckets[bucket_to_split].clone();
+            // And allocate a new vector to replace it
             self.buckets[bucket_to_split] = vec![];
 
+            // Re-hash all records in old_bucket. Ideally, about half
+            // of the records will go into the new bucket.
             for (k, v) in old_bucket {
                 self.put(k, v);
             }
 
-            println!("{:?}", self);
             return true
         }
 
