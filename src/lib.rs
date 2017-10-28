@@ -95,11 +95,48 @@ impl<K, V> LinHash<K, V>
         false
     }
 
+    pub fn contains(&mut self, key: K) -> bool {
+        match self.get(key) {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
+    fn search_bucket(&self, bucket_index: usize, key: &K) -> Option<usize> {
+        let bucket = &self.buckets[bucket_index];
+        for (i, &(ref k, ref _v)) in bucket.iter().enumerate() {
+            if k.clone() == key.clone() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn update(&mut self, key: K, val: V) -> bool {
+        let bucket_index = self.bucket(&key);
+        let index_to_update = self.search_bucket(bucket_index, &key);
+
+        match index_to_update {
+            Some(x) => {
+                self.buckets[bucket_index][x] = (key, val);
+                true
+            },
+            None => false,
+        }
+    }
+
     /// Insert (key,value) pair into the hashtable.
     pub fn put(&mut self, key: K, val: V) {
         let bucket_index = self.bucket(&key);
-        self.buckets[bucket_index].push((key, val));
-        self.r += 1;
+        match self.search_bucket(bucket_index, &key) {
+            Some(_) => {
+                self.update(key, val);
+            },
+            None => {
+                self.buckets[bucket_index].push((key, val));
+                self.r += 1;
+            },
+        }
 
         self.maybe_split();
     }
@@ -119,18 +156,7 @@ impl<K, V> LinHash<K, V>
     /// Removes record with `key` in hashtable.
     pub fn remove(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
-        let mut index_to_delete = None;
-
-        // Figure out where the record to be deleted is in the bucket.
-        {
-            let bucket = &self.buckets[bucket_index];
-            for (i, &(ref k, ref _v)) in bucket.iter().enumerate() {
-                if k.clone() == key {
-                    index_to_delete = Some(i);
-                    break;
-                }
-            }
-        }
+        let index_to_delete = self.search_bucket(bucket_index, &key);
 
         // Delete item from bucket
         match index_to_delete {
@@ -145,12 +171,22 @@ mod tests {
     use LinHash;
     
     #[test]
-    fn put_get_remove() {
+    fn all_ops() {
         let mut h : LinHash<&str, i32> = LinHash::new();
         h.put("hello", 12);
         h.put("there", 13);
+        h.put("foo", 42);
+        h.put("bar", 11);
+        h.put("bar", 22);
         h.remove("there");
+        h.update("foo", 84);
+
         assert_eq!(h.get("hello"), Some(12));
         assert_eq!(h.get("there"), None);
+        assert_eq!(h.get("foo"), Some(84));
+        assert_eq!(h.get("bar"), Some(22));
+        assert_eq!(h.update("doesn't exist", 99), false);
+        assert_eq!(h.contains("doesn't exist"), false);
+        assert_eq!(h.contains("hello"), true);
     }
 }
