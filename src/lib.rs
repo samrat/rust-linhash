@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::fmt::{Display, Debug};
 
+/// Linear Hashtable
 #[derive(Debug)]
 pub struct LinHash<K, V> {
     buckets: Vec<Vec<(K,V)>>,
@@ -15,6 +16,7 @@ impl<K, V> LinHash<K, V>
     where K: Eq + Hash + Display + Debug + Clone,
           V: Clone + Debug {
 
+    /// Creates a new Linear Hashtable.
     pub fn new() -> LinHash<K, V> {
         let i = 1;
         let r = 0;
@@ -28,7 +30,7 @@ impl<K, V> LinHash<K, V>
         }
     }
 
-    pub fn hash(&self, key: &K) -> u64 {
+    fn hash(&self, key: &K) -> u64 {
         let mut s = DefaultHasher::new();
         key.hash(&mut s);
         s.finish()
@@ -45,7 +47,6 @@ impl<K, V> LinHash<K, V>
             if bucket < self.n {
                 bucket
             } else {
-                // println!("i: {} {:b}", self.i, (1 << self.i));
                 bucket - (1 << (self.i-1))
             };
 
@@ -53,10 +54,18 @@ impl<K, V> LinHash<K, V>
         adjusted_bucket_index
     }
 
+    /// Returns true if the average number of records per bucket(r/n)
+    /// exceeds `threshold`
     fn split_needed(&self) -> bool {
         (self.r as f32 / self.n as f32) > self.threshold
     }
 
+    /// If necessary, allocates new bucket. If there's no more space
+    /// in the buckets vector(ie. n > 2^i), increment number of bits
+    /// used(i).
+
+    /// Note that, the bucket split is not necessarily the one just
+    /// inserted to.
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.n += 1;
@@ -85,6 +94,7 @@ impl<K, V> LinHash<K, V>
         false
     }
 
+    /// Insert (key,value) pair into the hashtable.
     pub fn put(&mut self, key: K, val: V) {
         let bucket_index = self.bucket(&key);
         self.buckets[bucket_index].push((key, val));
@@ -93,6 +103,7 @@ impl<K, V> LinHash<K, V>
         self.maybe_split();
     }
 
+    /// Lookup `key` in hashtable
     pub fn get(&self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
         let bucket = &self.buckets[bucket_index];
