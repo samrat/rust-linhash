@@ -1,9 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::fmt::{Display, Debug};
 
 /// Linear Hashtable
-#[derive(Debug)]
 pub struct LinHash<K, V> {
     buckets: Vec<Vec<(K,V)>>,
     i: usize,                   // no of bits used from hash
@@ -12,9 +10,10 @@ pub struct LinHash<K, V> {
 }
 
 impl<K, V> LinHash<K, V>
-    where K: PartialEq + Hash + Display + Debug + Clone,
-          V: Clone + Debug {
-
+    where K: PartialEq + Hash + Clone,
+          V: Clone {
+    /// average number of records per bucket before the hashmap needs
+    /// to grow.
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
