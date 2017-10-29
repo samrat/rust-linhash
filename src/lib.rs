@@ -4,28 +4,28 @@ use std::hash::{Hash, Hasher};
 /// Linear Hashtable
 pub struct LinHash<K, V> {
     buckets: Vec<Vec<(K,V)>>,
-    i: usize,                   // no of bits used from hash
-    r: usize,                   // number of items in hashtable
-    n: usize,                   // number of buckets
+    nbits: usize,               // no of bits used from hash
+    nitems: usize,              // number of items in hashtable
+    nbuckets: usize,            // number of buckets
 }
 
 impl<K, V> LinHash<K, V>
     where K: PartialEq + Hash + Clone,
           V: Clone {
-    /// average number of records per bucket before the hashmap needs
-    /// to grow.
+    /// "load"(utilization of data structure) needed before the
+    /// hashmap needs to grow.
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
     pub fn new() -> LinHash<K, V> {
-        let i = 1;
-        let r = 0;
-        let n = 2;
+        let nbits = 1;
+        let nitems = 0;
+        let nbuckets = 2;
         LinHash {
-            buckets: vec![vec![]; n],
-            i: i,
-            r: r,
-            n: n,
+            buckets: vec![vec![]; nbuckets],
+            nbits: nbits,
+            nitems: nitems,
+            nbuckets: nbuckets,
         }
     }
 
@@ -41,21 +41,20 @@ impl<K, V> LinHash<K, V>
     /// subtract this `1`.
     fn bucket(&self, key: &K) -> usize {
         let hash = self.hash(key);
-        let bucket = (hash & ((1 << self.i) - 1)) as usize;
+        let bucket = (hash & ((1 << self.nbits) - 1)) as usize;
         let adjusted_bucket_index =
-            if bucket < self.n {
+            if bucket < self.nbuckets {
                 bucket
             } else {
-                bucket - (1 << (self.i-1))
+                bucket - (1 << (self.nbits-1))
             };
 
         adjusted_bucket_index
     }
 
-    /// Returns true if the average number of records per bucket(r/n)
-    /// exceeds `threshold`
+    /// Returns true if the `load` exceeds `LinHash::THRESHOLD`
     fn split_needed(&self) -> bool {
-        (self.r as f32 / self.n as f32) > LinHash::<K,V>::THRESHOLD
+        (self.nitems as f32 / self.nbuckets as f32) > LinHash::<K,V>::THRESHOLD
     }
 
     /// If necessary, allocates new bucket. If there's no more space
@@ -66,16 +65,16 @@ impl<K, V> LinHash<K, V>
     /// inserted to.
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
-            self.n += 1;
+            self.nbuckets += 1;
             self.buckets.push(vec![]);
-            if self.n > (1 << self.i) {
-                self.i += 1;
+            if self.nbuckets > (1 << self.nbits) {
+                self.nbits += 1;
             }
             
             // Take index of last item added(the `push` above) and
             // subtract the 1 at the MSB position. eg: after bucket 11
             // is added, bucket 01 needs to be split
-            let bucket_to_split = (self.n-1) ^ (1 << (self.i-1));
+            let bucket_to_split = (self.nbuckets-1) ^ (1 << (self.nbits-1));
 
             // Copy the bucket we are about to split
             let old_bucket = self.buckets[bucket_to_split].clone();
@@ -136,7 +135,7 @@ impl<K, V> LinHash<K, V>
             },
             None => {
                 self.buckets[bucket_index].push((key, val));
-                self.r += 1;
+                self.nitems += 1;
             },
         }
 
