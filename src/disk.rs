@@ -1,14 +1,18 @@
 use std::io::prelude::*;
 use std::fs::File;
 use std::fs::OpenOptions;
-
 use std::io::SeekFrom;
 use std::str;
 use std::mem;
+use std::fmt::Debug;
 
-extern crate byteorder;
-use std::io::Cursor;
-use self::byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
+
+extern crate serde;
+extern crate bincode;
+use self::bincode::{serialize, deserialize as bin_deserialize,
+                    Bounded};
+use self::serde::ser::Serialize;
+use self::serde::de::{Deserialize, DeserializeOwned};
 
 const PAGE_SIZE : usize = 4096;     // bytes
 const HEADER_SIZE : usize = 8;      // bytes
@@ -33,10 +37,18 @@ pub struct DbFile {
     buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
+    keysize: usize,
+    valsize: usize,
+}
+
+pub fn deserialize<'a, T>(bytes: &'a [u8]) -> Result<T, bincode::Error>
+    where T: Deserialize<'a>
+{
+    bin_deserialize(bytes)
 }
 
 impl DbFile {
-    pub fn new(filename: &str) -> DbFile {
+    pub fn new<K,V>(filename: &str) -> DbFile {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -46,29 +58,26 @@ impl DbFile {
             Ok(f) => f,
             Err(e) => panic!(e),
         };
+        let keysize = mem::size_of::<K>();
+        let valsize = mem::size_of::<V>();
         DbFile {
             path: String::from(filename),
             file: file,
             buffer: Page::new(),
             page_id: None,
+            keysize: keysize,
+            valsize: valsize,
         }
     }
 
     fn read_header(&mut self) {
-        let mut header = vec![0; HEADER_SIZE];
-        DbFile::mem_move(&mut header,
-                         &self.buffer.storage[0..HEADER_SIZE]);
-        println!("{:?}", header);
-        let mut rdr = Cursor::new(header);
-        let num_tuples = rdr.read_u64::<LittleEndian>().unwrap();
-        self.buffer.num_tuples = num_tuples as usize;
-        println!("{}", num_tuples);
+        let num_tuples : usize = deserialize(&self.buffer.storage[0..HEADER_SIZE]).unwrap();
+        self.buffer.num_tuples = num_tuples;
     }
 
     fn write_header(&mut self) {
-        let mut wtr = vec![];
-        wtr.write_u64::<LittleEndian>(self.buffer.num_tuples as u64).unwrap();
-        DbFile::mem_move(&mut self.buffer.storage[0..HEADER_SIZE], &wtr);
+        DbFile::mem_move(&mut self.buffer.storage[0..HEADER_SIZE],
+                         &serialize(&self.buffer.num_tuples, Bounded(8)).unwrap());
     }
 
     // Reads page to self.buffer
@@ -81,7 +90,6 @@ impl DbFile {
                 self.file.read(&mut self.buffer.storage);
                 self.page_id = Some(page_id);
                 self.read_header();
-                println!("{:?}", str::from_utf8(&self.buffer.storage));
             },
         }
     }
@@ -101,13 +109,15 @@ impl DbFile {
         }
     }
 
-    pub fn write_tuple(&mut self, row_num: usize, t: (i32, &str)) {
+    pub fn write_tuple<K, V>(&mut self, row_num: usize, key: K, val: V)
+        where K: Serialize,
+              V: Serialize {
         self.get_page(0);
         // TODO: check if it's not just a overwrite
         self.buffer.num_tuples += 1;
 
-        let key_size = mem::size_of::<i32>();
-        let val_size = 32;
+        let key_size = mem::size_of::<K>();
+        let val_size = mem::size_of::<V>();
         let total_size = key_size + val_size;
 
         let row_offset = row_num * total_size;
@@ -115,24 +125,25 @@ impl DbFile {
         let key_offset = header_offset + HEADER_SIZE;
         let val_offset = key_offset + key_size;
         let row_end = val_offset + val_size;
-        // println!("row_offset: {}", row_offset);
-        
-        // convert i32 to little endian
-        let mut wtr = vec![];
-        wtr.write_i32::<LittleEndian>(t.0).unwrap();
-        println!("{:?}", wtr);
 
-        DbFile::mem_move(&mut self.buffer.storage[key_offset..val_offset], &wtr);
-        DbFile::mem_move(&mut self.buffer.storage[val_offset..row_end], &t.1.as_bytes());
+        println!("[write_tuple]keyoffset: {}, valoffset:{}", key_offset, val_offset);
 
-        println!("tuple_mem: {:?}", str::from_utf8(&self.buffer.storage));
+        // The maximum sizes of the encoded key and val.
+        let key_limit = Bounded(key_size as u64);
+        let val_limit = Bounded(val_size as u64);
+
+        DbFile::mem_move(&mut self.buffer.storage[key_offset..val_offset],
+                         &serialize(&key, key_limit).unwrap());
+        DbFile::mem_move(&mut self.buffer.storage[val_offset..row_end],
+                         &serialize(&val, val_limit).unwrap());
     }
 
-    pub fn read_tuple(&mut self, row_num: usize) {
+    pub fn read_tuple<K: DeserializeOwned + Debug,
+                      V: DeserializeOwned + Debug> (&mut self, row_num: usize) -> V {
         self.get_page(0);
 
-        let key_size = mem::size_of::<i32>();
-        let val_size = 32;
+        let key_size = mem::size_of::<K>();
+        let val_size = mem::size_of::<V>();
         let total_size = key_size + val_size;
 
         let row_offset = row_num * total_size;
@@ -140,16 +151,12 @@ impl DbFile {
         let key_offset = header_offset + HEADER_SIZE;
         let val_offset = key_offset + key_size;
         let row_end = val_offset + val_size;
-        println!("row_offset: {}", row_offset);
-        
-        let mut key = vec![0; key_size];
-        let mut val = vec![0; val_size];
 
-        DbFile::mem_move(&mut key, &self.buffer.storage[key_offset..val_offset]);
-        let mut rdr = Cursor::new(key);
-        let key = rdr.read_u16::<LittleEndian>().unwrap();
-        DbFile::mem_move(&mut val, &self.buffer.storage[val_offset..row_end]);
-        println!("read: {} {:?}", key, str::from_utf8(&val));
+        let decoded_key : K = deserialize(&self.buffer.storage[key_offset..val_offset]).unwrap();
+        let decoded_val : V = deserialize(&self.buffer.storage[val_offset..row_end]).unwrap();
+
+        println!("read: {:?} {:?}", decoded_key, decoded_val);
+        decoded_val
     }
 
     /// Write out page in `buffer` to file.

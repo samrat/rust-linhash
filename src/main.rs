@@ -45,12 +45,10 @@ fn main() {
 
     println!("{:?}", h.get("bar"));
 
-    let mut bp = DbFile::new("/tmp/buff");
-    // bp.write_page(0, b"flula");
-    // bp.get_page(0);
-    bp.write_tuple(0, (1, "samrat"));
-    bp.write_tuple(1, (12, "foo"));
+    let mut bp = DbFile::new::<i32, String>("/tmp/buff");
+    bp.write_tuple(0, 14, String::from("samrat"));
+    bp.write_tuple(1, 12, String::from("foo"));
     bp.write_buffer();
-    bp.read_tuple(1);
+    let v = bp.read_tuple::<i32, String>(1);
     // bp.write_page(0, &bp.buffer.storage);
 }
