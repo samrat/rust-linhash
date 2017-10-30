@@ -48,8 +48,8 @@ fn main() {
     let mut bp = DbFile::new("/tmp/buff");
     // bp.write_page(0, b"flula");
     // bp.get_page(0);
-    bp.write_tuple(0, (1, "samrat", "samrat@samrat.me"));
-    bp.write_tuple(1, (12, "foo", "foobar@example.com"));
+    bp.write_tuple(0, (1, "samrat"));
+    bp.write_tuple(1, (12, "foo"));
     bp.write_buffer();
     bp.read_tuple(1);
     // bp.write_page(0, &bp.buffer.storage);

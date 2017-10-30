@@ -11,15 +11,17 @@ use std::io::Cursor;
 use self::byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 
 const PAGE_SIZE : usize = 4096;     // bytes
-const NUM_PAGES : usize = 100;      // constant for now
+const HEADER_SIZE : usize = 8;      // bytes
 
 pub struct Page {
     storage: [u8; PAGE_SIZE],
+    num_tuples: usize,
 }
 
 impl Page {
     pub fn new() -> Page {
         Page {
+            num_tuples: 0,
             storage: [0; PAGE_SIZE]
         }
     }
@@ -29,6 +31,8 @@ pub struct DbFile {
     path: String,
     file: File,
     buffer: Page,
+    // which page is currently in `buffer`
+    page_id: Option<usize>,
 }
 
 impl DbFile {
@@ -46,24 +50,49 @@ impl DbFile {
             path: String::from(filename),
             file: file,
             buffer: Page::new(),
+            page_id: None,
         }
+    }
+
+    fn read_header(&mut self) {
+        let mut header = vec![0; HEADER_SIZE];
+        DbFile::mem_move(&mut header,
+                         &self.buffer.storage[0..HEADER_SIZE]);
+        println!("{:?}", header);
+        let mut rdr = Cursor::new(header);
+        let num_tuples = rdr.read_u64::<LittleEndian>().unwrap();
+        self.buffer.num_tuples = num_tuples as usize;
+        println!("{}", num_tuples);
+    }
+
+    fn write_header(&mut self) {
+        let mut wtr = vec![];
+        wtr.write_u64::<LittleEndian>(self.buffer.num_tuples as u64).unwrap();
+        DbFile::mem_move(&mut self.buffer.storage[0..HEADER_SIZE], &wtr);
     }
 
     // Reads page to self.buffer
     pub fn get_page(&mut self, page_id: usize) {
-        let offset = (page_id * PAGE_SIZE) as u64;
-        self.file.seek(SeekFrom::Start(offset));
-        self.file.read(&mut self.buffer.storage);
-        println!("{:?}", str::from_utf8(&self.buffer.storage));
+        match self.page_id {
+            Some(0) => (),
+            Some(_) | None => {
+                let offset = (page_id * PAGE_SIZE) as u64;
+                self.file.seek(SeekFrom::Start(offset));
+                self.file.read(&mut self.buffer.storage);
+                self.page_id = Some(page_id);
+                self.read_header();
+                println!("{:?}", str::from_utf8(&self.buffer.storage));
+            },
+        }
     }
 
     // Writes data in self.buffer into page `page_id`
-    pub fn write_page(&mut self, page_id: usize, data: &[u8]) {
+    pub fn write_page(mut file: &File, page_id: usize, data: &[u8]) {
         let offset = (page_id * PAGE_SIZE) as u64;
-        self.file.seek(SeekFrom::Start(offset));
+        file.seek(SeekFrom::Start(offset));
         println!("wrote {:?} bytes from offset {}",
-                 self.file.write(data), offset);
-        self.file.flush();
+                 file.write(data), offset);
+        file.flush();
     }
 
     fn mem_move(dest: &mut [u8], src: &[u8]) {
@@ -72,61 +101,63 @@ impl DbFile {
         }
     }
 
-    pub fn write_tuple(&mut self, row_num: usize, t: (i32, &str, &str)) {
-        let id_size = mem::size_of::<i32>();
-        let name_size = 32;
-        let email_size = 255;
-        let total_size = id_size + name_size + email_size;
+    pub fn write_tuple(&mut self, row_num: usize, t: (i32, &str)) {
+        self.get_page(0);
+        // TODO: check if it's not just a overwrite
+        self.buffer.num_tuples += 1;
+
+        let key_size = mem::size_of::<i32>();
+        let val_size = 32;
+        let total_size = key_size + val_size;
 
         let row_offset = row_num * total_size;
-        println!("row_offset: {}", row_offset);
-        let id_offset = row_offset;
+        let header_offset = row_offset;
+        let key_offset = header_offset + HEADER_SIZE;
+        let val_offset = key_offset + key_size;
+        let row_end = val_offset + val_size;
+        // println!("row_offset: {}", row_offset);
         
-        let name_offset = id_offset + id_size;
-        let email_offset = name_offset + name_size;
-        let row_end = email_offset + email_size;
-
         // convert i32 to little endian
         let mut wtr = vec![];
         wtr.write_i32::<LittleEndian>(t.0).unwrap();
         println!("{:?}", wtr);
 
-        DbFile::mem_move(&mut self.buffer.storage[id_offset..name_offset], &wtr);
-        DbFile::mem_move(&mut self.buffer.storage[name_offset..email_offset], &t.1.as_bytes());
-        DbFile::mem_move(&mut self.buffer.storage[email_offset..row_end], &t.2.as_bytes());
+        DbFile::mem_move(&mut self.buffer.storage[key_offset..val_offset], &wtr);
+        DbFile::mem_move(&mut self.buffer.storage[val_offset..row_end], &t.1.as_bytes());
 
         println!("tuple_mem: {:?}", str::from_utf8(&self.buffer.storage));
     }
 
-    pub fn read_tuple(&self, row_num: usize) {
-        let id_size = mem::size_of::<i32>();
-        let name_size = 32;
-        let email_size = 255;
-        let total_size = id_size + name_size + email_size;
+    pub fn read_tuple(&mut self, row_num: usize) {
+        self.get_page(0);
+
+        let key_size = mem::size_of::<i32>();
+        let val_size = 32;
+        let total_size = key_size + val_size;
 
         let row_offset = row_num * total_size;
+        let header_offset = row_offset;
+        let key_offset = header_offset + HEADER_SIZE;
+        let val_offset = key_offset + key_size;
+        let row_end = val_offset + val_size;
         println!("row_offset: {}", row_offset);
-        let id_offset = row_offset;
         
-        let name_offset = id_offset + id_size;
-        let email_offset = name_offset + name_size;
-        let row_end = email_offset + email_size;
+        let mut key = vec![0; key_size];
+        let mut val = vec![0; val_size];
 
-        let mut id = vec![0; id_size];
-        let mut name = vec![0; name_size];
-        let mut email = vec![0; email_size];
-
-        DbFile::mem_move(&mut id, &self.buffer.storage[id_offset..name_offset]);
-        let mut rdr = Cursor::new(id);
-        let id = rdr.read_u16::<LittleEndian>().unwrap();
-        DbFile::mem_move(&mut name, &self.buffer.storage[name_offset..email_offset]);
-        DbFile::mem_move(&mut email, &self.buffer.storage[email_offset..row_end]);
-        println!("read: {} {:?} {:?}", id, str::from_utf8(&name), str::from_utf8(&email));
+        DbFile::mem_move(&mut key, &self.buffer.storage[key_offset..val_offset]);
+        let mut rdr = Cursor::new(key);
+        let key = rdr.read_u16::<LittleEndian>().unwrap();
+        DbFile::mem_move(&mut val, &self.buffer.storage[val_offset..row_end]);
+        println!("read: {} {:?}", key, str::from_utf8(&val));
     }
 
-    // TEMP
+    /// Write out page in `buffer` to file.
     pub fn write_buffer(&mut self) {
-        write_page("/tmp/tupletest", 0, &self.buffer.storage);
+        self.write_header();
+        DbFile::write_page(&mut self.file,
+                           self.page_id.expect("No page buffered"),
+                           &self.buffer.storage);
     }
 }
 
