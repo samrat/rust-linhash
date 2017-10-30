@@ -12,3 +12,4 @@ name = "linhash-test"
 path = "src/main.rs"
 
 [dependencies]
+byteorder = "1.1.0"

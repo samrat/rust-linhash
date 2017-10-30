@@ -1,7 +1,13 @@
 extern crate linhash;
 
+mod disk;
+use disk::write_page;
+use disk::BufferPool;
+
 use linhash::LinHash;
 use std::time::Instant;
+use std::fs::File;
+use std::fs::OpenOptions;
 
 #[allow(dead_code)]
 fn measure_perf(num_iters: i32) {
@@ -38,4 +44,13 @@ fn main() {
     // measure_perf(4);
 
     println!("{:?}", h.get("bar"));
+
+    let mut bp = BufferPool::new("/tmp/buff");
+    // bp.write_page(0, b"flula");
+    // bp.get_page(0);
+    bp.write_tuple(0, (1, "samrat", "samrat@samrat.me"));
+    bp.write_tuple(1, (12, "foo", "foobar@example.com"));
+    bp.write_buffer();
+    bp.read_tuple(1);
+    // bp.write_page(0, &bp.buffer.storage);
 }
