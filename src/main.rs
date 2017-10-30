@@ -2,7 +2,7 @@ extern crate linhash;
 
 mod disk;
 use disk::write_page;
-use disk::BufferPool;
+use disk::DbFile;
 
 use linhash::LinHash;
 use std::time::Instant;
@@ -45,7 +45,7 @@ fn main() {
 
     println!("{:?}", h.get("bar"));
 
-    let mut bp = BufferPool::new("/tmp/buff");
+    let mut bp = DbFile::new("/tmp/buff");
     // bp.write_page(0, b"flula");
     // bp.get_page(0);
     bp.write_tuple(0, (1, "samrat", "samrat@samrat.me"));

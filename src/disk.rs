@@ -25,14 +25,14 @@ impl Page {
     }
 }
 
-pub struct BufferPool {
+pub struct DbFile {
+    path: String,
     file: File,
-    // pages: Vec<Option<Page>>,
     buffer: Page,
 }
 
-impl BufferPool {
-    pub fn new(filename: &str) -> BufferPool {
+impl DbFile {
+    pub fn new(filename: &str) -> DbFile {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -42,13 +42,9 @@ impl BufferPool {
             Ok(f) => f,
             Err(e) => panic!(e),
         };
-        // let mut pages = Vec::with_capacity(NUM_PAGES);
-        // for _ in 0..NUM_PAGES {
-        //     pages.push(None);
-        // }
-        BufferPool {
+        DbFile {
+            path: String::from(filename),
             file: file,
-            // pages: pages,
             buffer: Page::new(),
         }
     }
@@ -95,9 +91,9 @@ impl BufferPool {
         wtr.write_i32::<LittleEndian>(t.0).unwrap();
         println!("{:?}", wtr);
 
-        BufferPool::mem_move(&mut self.buffer.storage[id_offset..name_offset], &wtr);
-        BufferPool::mem_move(&mut self.buffer.storage[name_offset..email_offset], &t.1.as_bytes());
-        BufferPool::mem_move(&mut self.buffer.storage[email_offset..row_end], &t.2.as_bytes());
+        DbFile::mem_move(&mut self.buffer.storage[id_offset..name_offset], &wtr);
+        DbFile::mem_move(&mut self.buffer.storage[name_offset..email_offset], &t.1.as_bytes());
+        DbFile::mem_move(&mut self.buffer.storage[email_offset..row_end], &t.2.as_bytes());
 
         println!("tuple_mem: {:?}", str::from_utf8(&self.buffer.storage));
     }
@@ -120,11 +116,11 @@ impl BufferPool {
         let mut name = vec![0; name_size];
         let mut email = vec![0; email_size];
 
-        BufferPool::mem_move(&mut id, &self.buffer.storage[id_offset..name_offset]);
+        DbFile::mem_move(&mut id, &self.buffer.storage[id_offset..name_offset]);
         let mut rdr = Cursor::new(id);
         let id = rdr.read_u16::<LittleEndian>().unwrap();
-        BufferPool::mem_move(&mut name, &self.buffer.storage[name_offset..email_offset]);
-        BufferPool::mem_move(&mut email, &self.buffer.storage[email_offset..row_end]);
+        DbFile::mem_move(&mut name, &self.buffer.storage[name_offset..email_offset]);
+        DbFile::mem_move(&mut email, &self.buffer.storage[email_offset..row_end]);
         println!("read: {} {:?} {:?}", id, str::from_utf8(&name), str::from_utf8(&email));
     }
 
