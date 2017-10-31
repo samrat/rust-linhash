@@ -10,10 +10,16 @@ use page;
 use page::{Page, PAGE_SIZE, HEADER_SIZE};
 use util::mem_move;
 
-use bincode::{serialize,
-                    Bounded};
+use bincode;
+use bincode::{serialize, deserialize as bin_deserialize,
+              Bounded};
 use serde::ser::Serialize;
 use serde::de::{Deserialize, DeserializeOwned};
+
+pub fn deserialize<'a, T>(bytes: &'a [u8]) -> Result<T, bincode::Error>
+    where T: Deserialize<'a> {
+    bin_deserialize(bytes)
+}
 
 pub struct CtrlPage {
     nbuckets: usize,
@@ -27,8 +33,6 @@ pub struct DbFile {
     buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
-    keysize: usize,
-    valsize: usize,
     tuples_per_page: usize,
 }
 
@@ -50,16 +54,14 @@ impl DbFile {
         DbFile {
             path: String::from(filename),
             file: file,
-            buffer: Page::new(),
+            buffer: Page::new(keysize, valsize),
             page_id: None,
-            keysize: keysize,
-            valsize: valsize,
             tuples_per_page: tuples_per_page,
         }
     }
 
     fn read_header(&mut self) {
-        let num_tuples : usize = page::deserialize(&self.buffer.storage[0..HEADER_SIZE]).unwrap();
+        let num_tuples : usize = deserialize(&self.buffer.storage[0..HEADER_SIZE]).unwrap();
         self.buffer.num_tuples = num_tuples;
     }
 
@@ -97,14 +99,30 @@ impl DbFile {
     pub fn write_tuple<K, V>(&mut self, row_num: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
-        self.get_page(0);
-        self.buffer.write_tuple::<K,V>(row_num, key, val)
+        let page_index = (row_num / self.tuples_per_page) + 1;
+        self.get_page(page_index);
+
+        // The maximum sizes of the encoded key and val.
+        let key_limit = Bounded(mem::size_of::<K>() as u64);
+        let val_limit = Bounded(mem::size_of::<V>() as u64);
+
+        self.buffer.write_tuple(row_num,
+                                &serialize(&key, key_limit).unwrap(),
+                                &serialize(&val, val_limit).unwrap())
+    }
+
+    pub fn deserialize_kv<K, V>(k: &[u8], v: &[u8]) -> (K, V)
+        where K: DeserializeOwned + Debug,
+              V: DeserializeOwned + Debug {
+        (deserialize(k).unwrap(), deserialize(v).unwrap())
     }
 
     pub fn read_tuple<K: DeserializeOwned + Debug,
-                      V: DeserializeOwned + Debug> (&mut self, row_num: usize) -> V {
-        self.get_page(0);
-        self.buffer.read_tuple::<K,V>(row_num)
+                      V: DeserializeOwned + Debug>(&mut self, row_num: usize) -> (K, V) {
+        let page_index = (row_num / self.tuples_per_page) + 1;
+        self.get_page(page_index);
+        let (k, v) = self.buffer.read_tuple(row_num);
+        DbFile::deserialize_kv::<K,V>(k, v)
     }
 
     /// Write out page in `buffer` to file.
@@ -113,5 +131,14 @@ impl DbFile {
         DbFile::write_page(&mut self.file,
                            self.page_id.expect("No page buffered"),
                            &self.buffer.storage);
+    }
+
+    pub fn all_tuples_in_buffer<K, V>(&mut self)
+        where K: DeserializeOwned + Debug,
+              V: DeserializeOwned + Debug {
+        while let Some((k,v)) = self.buffer.next() {
+            let (dk, dv) : (K, V) = DbFile::deserialize_kv(k, v);
+            println!("{:?} {:?}", dk, dv);
+        }
     }
 }

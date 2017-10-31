@@ -51,5 +51,6 @@ fn main() {
     bp.write_tuple(1, 12, String::from("foo"));
     bp.write_buffer();
     let v = bp.read_tuple::<i32, String>(1);
+    bp.all_tuples_in_buffer::<i32, String>();
     // bp.write_page(0, &bp.buffer.storage);
 }
