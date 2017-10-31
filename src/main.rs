@@ -5,10 +5,12 @@ extern crate bincode;
 mod disk;
 mod page;
 mod util;
+mod bucket;
 use disk::DbFile;
 
 use linhash::LinHash;
 use std::time::Instant;
+
 
 #[allow(dead_code)]
 fn measure_perf(num_iters: i32) {
@@ -53,4 +55,6 @@ fn main() {
     let v = bp.read_tuple::<i32, String>(1);
     bp.all_tuples_in_buffer::<i32, String>();
     // bp.write_page(0, &bp.buffer.storage);
+
+    println!("{:?}", bucket::Bucket::<i32, String>::from_page(bp.buffer));
 }

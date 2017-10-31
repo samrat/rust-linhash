@@ -8,7 +8,7 @@ use std::fmt::Debug;
 
 use page;
 use page::{Page, PAGE_SIZE, HEADER_SIZE};
-use util::mem_move;
+use util::{mem_move, deserialize, deserialize_kv};
 
 use bincode;
 use bincode::{serialize, deserialize as bin_deserialize,
@@ -16,10 +16,6 @@ use bincode::{serialize, deserialize as bin_deserialize,
 use serde::ser::Serialize;
 use serde::de::{Deserialize, DeserializeOwned};
 
-pub fn deserialize<'a, T>(bytes: &'a [u8]) -> Result<T, bincode::Error>
-    where T: Deserialize<'a> {
-    bin_deserialize(bytes)
-}
 
 pub struct CtrlPage {
     nbuckets: usize,
@@ -30,7 +26,7 @@ pub struct CtrlPage {
 pub struct DbFile {
     path: String,
     file: File,
-    buffer: Page,
+    pub buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
     tuples_per_page: usize,
@@ -111,18 +107,13 @@ impl DbFile {
                                 &serialize(&val, val_limit).unwrap())
     }
 
-    pub fn deserialize_kv<K, V>(k: &[u8], v: &[u8]) -> (K, V)
-        where K: DeserializeOwned + Debug,
-              V: DeserializeOwned + Debug {
-        (deserialize(k).unwrap(), deserialize(v).unwrap())
-    }
 
     pub fn read_tuple<K: DeserializeOwned + Debug,
                       V: DeserializeOwned + Debug>(&mut self, row_num: usize) -> (K, V) {
         let page_index = (row_num / self.tuples_per_page) + 1;
         self.get_page(page_index);
         let (k, v) = self.buffer.read_tuple(row_num);
-        DbFile::deserialize_kv::<K,V>(k, v)
+        deserialize_kv::<K,V>(k, v)
     }
 
     /// Write out page in `buffer` to file.
@@ -137,7 +128,7 @@ impl DbFile {
         where K: DeserializeOwned + Debug,
               V: DeserializeOwned + Debug {
         while let Some((k,v)) = self.buffer.next() {
-            let (dk, dv) : (K, V) = DbFile::deserialize_kv(k, v);
+            let (dk, dv) : (K, V) = deserialize_kv(k, v);
             println!("{:?} {:?}", dk, dv);
         }
     }
