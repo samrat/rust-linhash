@@ -1,13 +1,14 @@
 extern crate linhash;
+extern crate serde;
+extern crate bincode;
 
 mod disk;
-use disk::write_page;
+mod page;
+mod util;
 use disk::DbFile;
 
 use linhash::LinHash;
 use std::time::Instant;
-use std::fs::File;
-use std::fs::OpenOptions;
 
 #[allow(dead_code)]
 fn measure_perf(num_iters: i32) {
