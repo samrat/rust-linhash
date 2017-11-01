@@ -37,16 +37,16 @@ fn measure_perf(num_iters: i32) {
 }
 
 fn main() {
-    let mut h : LinHash<&str, i32> = LinHash::new();
-    h.put("hello", 12);
-    h.put("there", 13);
-    h.put("foo", 14);
-    h.put("bar", 15);
-    h.remove("bar");
+    let mut h : LinHash<String, i32> = LinHash::new();
+    h.put(String::from("hello"), 12);
+    h.put(String::from("there"), 13);
+    h.put(String::from("foo"), 14);
+    h.put(String::from("bar"), 15);
+    h.remove(String::from("bar"));
 
     // measure_perf(4);
 
-    println!("{:?}", h.get("bar"));
+    println!("{:?}", h.get(String::from("bar")));
 
     let mut bp = DbFile::new::<i32, String>("/tmp/buff");
     bp.write_tuple(0, 14, String::from("samrat"));

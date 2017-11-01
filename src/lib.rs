@@ -1,17 +1,27 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::mem;
+
+extern crate serde;
+extern crate bincode;
+mod util;
+mod page;
+mod disk;
+mod bucket;
+use bucket::Bucket;
+use serde::de::DeserializeOwned;
 
 /// Linear Hashtable
 pub struct LinHash<K, V> {
-    buckets: Vec<Vec<(K,V)>>,
+    buckets: Vec<Bucket<K,V>>,
     nbits: usize,               // no of bits used from hash
     nitems: usize,              // number of items in hashtable
     nbuckets: usize,            // number of buckets
 }
 
 impl<K, V> LinHash<K, V>
-    where K: PartialEq + Hash + Clone,
-          V: Clone {
+    where K: PartialEq + Hash + Clone + DeserializeOwned,
+          V: Clone + DeserializeOwned {
     /// "load"(utilization of data structure) needed before the
     /// hashmap needs to grow.
     const THRESHOLD: f32 = 0.8;
@@ -22,7 +32,7 @@ impl<K, V> LinHash<K, V>
         let nitems = 0;
         let nbuckets = 2;
         LinHash {
-            buckets: vec![vec![]; nbuckets],
+            buckets: vec![Bucket::new(); nbuckets],
             nbits: nbits,
             nitems: nitems,
             nbuckets: nbuckets,
@@ -66,7 +76,7 @@ impl<K, V> LinHash<K, V>
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.nbuckets += 1;
-            self.buckets.push(vec![]);
+            self.buckets.push(Bucket::new());
             if self.nbuckets > (1 << self.nbits) {
                 self.nbits += 1;
             }
@@ -76,15 +86,15 @@ impl<K, V> LinHash<K, V>
             // is added, bucket 01 needs to be split
             let bucket_to_split = (self.nbuckets-1) ^ (1 << (self.nbits-1));
 
-            // Copy the bucket we are about to split
-            let old_bucket = self.buckets[bucket_to_split].clone();
-            // And allocate a new vector to replace it
-            self.buckets[bucket_to_split] = vec![];
+            // Replace the bucket to split with a fresh Bucket
+            let old_bucket =
+                mem::replace(&mut self.buckets[bucket_to_split],
+                             Bucket::new());
 
             // Re-hash all records in old_bucket. Ideally, about half
             // of the records will go into the new bucket.
-            for (k, v) in old_bucket {
-                self.put(k, v);
+            for &(ref k, ref v) in old_bucket.iter() {
+                self.put(k.clone(), v.clone());
             }
 
             return true
@@ -146,7 +156,7 @@ impl<K, V> LinHash<K, V>
     pub fn get(&self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
         let bucket = &self.buckets[bucket_index];
-        for &(ref k, ref v) in bucket {
+        for &(ref k, ref v) in bucket.iter() {
             if k.clone() == key {
                 return Some(v.clone())
             }
@@ -173,21 +183,21 @@ mod tests {
     
     #[test]
     fn all_ops() {
-        let mut h : LinHash<&str, i32> = LinHash::new();
-        h.put("hello", 12);
-        h.put("there", 13);
-        h.put("foo", 42);
-        h.put("bar", 11);
-        h.put("bar", 22);
-        h.remove("there");
-        h.update("foo", 84);
+        let mut h : LinHash<String, i32> = LinHash::new();
+        h.put(String::from("hello"), 12);
+        h.put(String::from("there"), 13);
+        h.put(String::from("foo"), 42);
+        h.put(String::from("bar"), 11);
+        h.put(String::from("bar"), 22);
+        h.remove(String::from("there"));
+        h.update(String::from("foo"), 84);
 
-        assert_eq!(h.get("hello"), Some(12));
-        assert_eq!(h.get("there"), None);
-        assert_eq!(h.get("foo"), Some(84));
-        assert_eq!(h.get("bar"), Some(22));
-        assert_eq!(h.update("doesn't exist", 99), false);
-        assert_eq!(h.contains("doesn't exist"), false);
-        assert_eq!(h.contains("hello"), true);
+        assert_eq!(h.get(String::from("hello")), Some(12));
+        assert_eq!(h.get(String::from("there")), None);
+        assert_eq!(h.get(String::from("foo")), Some(84));
+        assert_eq!(h.get(String::from("bar")), Some(22));
+        assert_eq!(h.update(String::from("doesn't exist"), 99), false);
+        assert_eq!(h.contains(String::from("doesn't exist")), false);
+        assert_eq!(h.contains(String::from("hello")), true);
     }
 }

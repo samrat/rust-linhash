@@ -15,7 +15,7 @@ pub fn deserialize<'a, T>(bytes: &'a [u8]) -> Result<T, bincode::Error>
 }
 
 pub fn deserialize_kv<K, V>(k: &[u8], v: &[u8]) -> (K, V)
-        where K: DeserializeOwned + Debug,
-              V: DeserializeOwned + Debug {
+        where K: DeserializeOwned,
+              V: DeserializeOwned {
         (deserialize(k).unwrap(), deserialize(v).unwrap())
     }
