@@ -11,11 +11,9 @@ extern crate bincode;
 mod util;
 mod page;
 mod disk;
-mod kvstore;
 
 use page::Page;
 use disk::DbFile;
-use kvstore::KVStore;
 use serde::ser::Serialize;
 use serde::de::DeserializeOwned;
 

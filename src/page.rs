@@ -3,8 +3,6 @@ use std::mem;
 use util::mem_move;
 use std::str;
 
-use kvstore::KVStore;
-
 pub const PAGE_SIZE : usize = 4096;     // bytes
 pub const HEADER_SIZE : usize = 16;      // bytes
 
@@ -14,7 +12,6 @@ pub struct Page {
     pub num_tuples: usize,
     // page_id of overflow bucket
     next: Option<usize>,
-    cursor: usize,
     key_size: usize,
     val_size: usize,
 }
@@ -34,7 +31,6 @@ impl Page {
             num_tuples: 0,
             storage: [0; PAGE_SIZE],
             next: None,
-            cursor: 0,
             key_size: key_size,
             val_size: val_size,
         }
@@ -76,24 +72,6 @@ impl Page {
         // println!("storage: {:?}", self.storage.to_vec());
         // TODO: check if it's not just a overwrite
         self.num_tuples += 1;
-    }
-
-    // hacky-- uses shared `cursor`
-    pub fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
-        let cursor;
-        {
-            cursor = self.cursor;
-        }
-
-        self.cursor += 1;
-        if self.cursor < self.num_tuples {
-            let (k, v) = self.read_tuple(cursor);
-            let k = k.to_vec();
-            let v = v.to_vec();
-            Some((k,v))
-        } else {
-            None
-        }
     }
 
     pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
