@@ -17,12 +17,6 @@ use serde::ser::Serialize;
 use serde::de::{Deserialize, DeserializeOwned};
 
 
-pub struct CtrlPage {
-    nbuckets: usize,
-    nbits: usize,
-    items: usize,
-}
-
 pub struct DbFile {
     path: String,
     file: File,
