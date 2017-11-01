@@ -6,6 +6,7 @@ mod disk;
 mod page;
 mod util;
 mod bucket;
+mod kvstore;
 use disk::DbFile;
 
 use linhash::LinHash;
@@ -42,18 +43,18 @@ fn main() {
     h.put(String::from("there"), 13);
     h.put(String::from("foo"), 14);
     h.put(String::from("bar"), 15);
-    h.remove(String::from("bar"));
+    // h.remove(String::from("bar"));
 
     // measure_perf(4);
 
-    println!("{:?}", h.get(String::from("bar")));
+    println!("{:?}", h.get(String::from("hello")));
 
     let mut bp = DbFile::new::<i32, String>("/tmp/buff");
     bp.write_tuple(0, 14, String::from("samrat"));
     bp.write_tuple(1, 12, String::from("foo"));
     bp.write_buffer();
-    let v = bp.read_tuple::<i32, String>(1);
-    bp.all_tuples_in_buffer::<i32, String>();
+    // let v = bp.read_tuple::<i32, String>(1);
+    bp.all_tuples_in_page::<i32, String>(1);
     // bp.write_page(0, &bp.buffer.storage);
 
     println!("{:?}", bucket::Bucket::<i32, String>::from_page(bp.buffer));
