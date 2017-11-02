@@ -34,13 +34,13 @@ impl<K, V> LinHash<K, V>
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
-    pub fn new() -> LinHash<K, V> {
+    pub fn new(filename: &str) -> LinHash<K, V> {
         let nbits = 1;
         let nitems = 0;
         let nbuckets = 2;
         LinHash {
             // TODO: randomize filename (?)
-            buckets: DbFile::new::<K,V>("/tmp/qwert"),
+            buckets: DbFile::new::<K,V>(filename),
             nbits: nbits,
             nitems: nitems,
             nbuckets: nbuckets,
@@ -95,6 +95,7 @@ impl<K, V> LinHash<K, V>
 
     /// Note that, the bucket split is not necessarily the one just
     /// inserted to.
+    // TODO: move overflow buckets once nbuckets == overflow_start
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.nbuckets += 1;
@@ -160,10 +161,13 @@ impl<K, V> LinHash<K, V>
                 self.buckets.put(bucket_index, key, val);
                 self.nitems += 1;
             },
-            (Some(pos), Some(_old_val)) =>
+            (Some(pos), Some(_old_val)) => // update old value
                 self.buckets.write_tuple(bucket_index, pos, key, val),
             (None, None) => {
                 // TODO: overflow
+                let overflow_index = self.buckets.allocate_overflow::<K,V>(bucket_index);
+                self.buckets.put(overflow_index, key, val);
+                self.nitems += 1;
             },
             (None, Some(_)) => panic!("impossible case"),
         }
@@ -182,12 +186,14 @@ impl<K, V> LinHash<K, V>
     /// Lookup `key` in hashtable
     pub fn get(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
-        if let (Some(_), Some(val)) =
-            self.buckets.search_bucket(bucket_index, key) {
-                Some(val)
-            } else {
+        match self.buckets.search_bucket(bucket_index, key) {
+            (Some(_), Some(val)) => Some(val),
+            (Some(_), None) => {
+                // TODO: check overflow bucket
                 None
-            }
+            },
+            _ => None,
+        }
     }
 
     // Removes record with `key` in hashtable.
@@ -209,7 +215,7 @@ mod tests {
     
     #[test]
     fn all_ops() {
-        let mut h : LinHash<String, i32> = LinHash::new();
+        let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_all_ops");
         h.put(String::from("hello"), 12);
         h.put(String::from("there"), 13);
         h.put(String::from("foo"), 42);

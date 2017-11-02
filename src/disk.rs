@@ -205,6 +205,24 @@ impl DbFile {
         }
     }
 
+    pub fn allocate_overflow<K,V>(&mut self, page_id: usize) -> usize
+        where K: DeserializeOwned + Debug,
+              V: DeserializeOwned + Debug {
+        self.get_page(page_id);
+
+        let overflow_index = self.overflow_free;
+        self.allocate_new_page::<K,V>(overflow_index);
+        self.buffer.next = Some(overflow_index);
+        self.write_buffer();
+
+        self.get_page(overflow_index);
+        self.buffer.prev = Some(page_id);
+        self.write_buffer();
+
+        self.overflow_free += 1;
+        overflow_index
+    }
+
     pub fn put<K,V>(&mut self, page_id: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
@@ -263,5 +281,22 @@ impl DbFile {
         self.write_buffer();
 
         tuples
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use DbFile;
+
+    #[test]
+    fn dbfile_tests () {
+        // let mut bp = DbFile::new::<i32, String>("/tmp/buff");
+        // bp.write_tuple(0, 14, String::from("samrat"));
+        // bp.write_tuple(1, 12, String::from("foo"));
+        // bp.write_buffer();
+        // let v = bp.read_tuple::<i32, String>(1);
+        // bp.all_tuples_in_page::<i32, String>(1);
+        // bp.write_page(0, &bp.buffer.storage);
+        assert_eq!(1+1,2);
     }
 }

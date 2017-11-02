@@ -18,13 +18,13 @@ fn measure_perf(num_iters: i32) {
     // `lookup` should be O(1).
     for i in 1..num_iters {
         let now = Instant::now();
-        let mut h2 : LinHash<i32, i32> = LinHash::new();
-        for k in 0..(1000000*i) {
+        let mut h2 : LinHash<i32, i32> = LinHash::new("/tmp/measure_perf");
+        for k in 0..(10000*i) {
             h2.put(k, k+1);
         }
 
         let time_get = Instant::now();
-        for k in 10000..90000 {
+        for k in 100..900 {
             h2.get(k);
         }
         let time_get_done = Instant::now();
@@ -36,7 +36,7 @@ fn measure_perf(num_iters: i32) {
 }
 
 fn main() {
-    let mut h : LinHash<String, i32> = LinHash::new();
+    let mut h : LinHash<String, i32> = LinHash::new("/tmp/main_tests");
     h.put(String::from("hello"), 12);
     h.put(String::from("there"), 13);
     h.put(String::from("foo"), 14);
@@ -46,12 +46,4 @@ fn main() {
     // measure_perf(4);
 
     println!("{:?}", h.get(String::from("hello")));
-
-    let mut bp = DbFile::new::<i32, String>("/tmp/buff");
-    // bp.write_tuple(0, 14, String::from("samrat"));
-    // bp.write_tuple(1, 12, String::from("foo"));
-    // bp.write_buffer();
-    // let v = bp.read_tuple::<i32, String>(1);
-    // bp.all_tuples_in_page::<i32, String>(1);
-    // bp.write_page(0, &bp.buffer.storage);
 }
