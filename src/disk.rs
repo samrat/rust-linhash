@@ -204,7 +204,8 @@ impl DbFile {
                            &self.buffer.storage);
     }
 
-    pub fn all_tuples_in_page<K, V>(&mut self, page_id: usize)
+    /// Returns a vector with all tuples in the block
+    fn all_tuples_in_page<K, V>(&mut self, page_id: usize)
                                     -> Vec<(K,V)>
         where K: DeserializeOwned + Debug,
               V: DeserializeOwned + Debug {
@@ -219,14 +220,21 @@ impl DbFile {
         records
     }
 
-    pub fn allocate_new_page<K,V>(&mut self, page_id: usize) {
+    /// Clear out block `page_id` in disk. Returns a list of all
+    /// tuples that were present in the block.
+    pub fn allocate_new_page<K,V>(&mut self, page_id: usize) -> Vec<(K,V)>
+        where K: DeserializeOwned + Debug,
+              V: DeserializeOwned + Debug {
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let new_page = Page::new(keysize, valsize);
+        let tuples = self.all_tuples_in_page::<K,V>(page_id);
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
         self.dirty = false;
         self.write_buffer();
+
+        tuples
     }
 }

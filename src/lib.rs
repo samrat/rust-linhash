@@ -98,7 +98,7 @@ impl<K, V> LinHash<K, V>
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.nbuckets += 1;
-            self.buckets.allocate_new_page::<K,V>(self.nbuckets);
+            let _ = self.buckets.allocate_new_page::<K,V>(self.nbuckets);
             if self.nbuckets > (1 << self.nbits) {
                 self.nbits += 1;
             }
@@ -112,11 +112,11 @@ impl<K, V> LinHash<K, V>
 
             let key_size = mem::size_of::<K>();
             let val_size = mem::size_of::<V>();
-            let new_bucket = Page::new(key_size, val_size);
+
+            // Replace the bucket to split with a fresh, empty
+            // page. And get a list of all tuples stored in the bucket
             let old_bucket_records =
-                self.buckets.all_tuples_in_page::<K,V>(bucket_to_split);
-            // Replace the bucket to split with a fresh, empty page
-            self.buckets.allocate_new_page::<K,V>(bucket_to_split);
+                self.buckets.allocate_new_page::<K,V>(bucket_to_split);
 
             println!("{:?}", old_bucket_records);
             // Re-hash all records in old_bucket. Ideally, about half
