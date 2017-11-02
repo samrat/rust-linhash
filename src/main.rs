@@ -48,10 +48,10 @@ fn main() {
     println!("{:?}", h.get(String::from("hello")));
 
     let mut bp = DbFile::new::<i32, String>("/tmp/buff");
-    bp.write_tuple(0, 14, String::from("samrat"));
-    bp.write_tuple(1, 12, String::from("foo"));
-    bp.write_buffer();
+    // bp.write_tuple(0, 14, String::from("samrat"));
+    // bp.write_tuple(1, 12, String::from("foo"));
+    // bp.write_buffer();
     // let v = bp.read_tuple::<i32, String>(1);
-    bp.all_tuples_in_page::<i32, String>(1);
+    // bp.all_tuples_in_page::<i32, String>(1);
     // bp.write_page(0, &bp.buffer.storage);
 }

@@ -147,23 +147,23 @@ impl DbFile {
         file.flush().expect("flush failed");
     }
 
-    pub fn write_tuple<K, V>(&mut self, row_num: usize, key: K, val: V)
+    pub fn write_tuple<K, V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
-        // TODO: get rid of row_num
-        let page_index = (row_num / self.tuples_per_page);
-        self.get_page(page_index);
+        self.get_page(page_id);
 
         // The maximum sizes of the encoded key and val.
         let key_limit = Bounded(mem::size_of::<K>() as u64);
         let val_limit = Bounded(mem::size_of::<V>() as u64);
 
         self.dirty = true;
-        self.buffer.put(&serialize(&key, key_limit).unwrap(),
-                        &serialize(&val, val_limit).unwrap())
+        self.buffer.write_tuple(row_num,
+                                &serialize(&key, key_limit).unwrap(),
+                                &serialize(&val, val_limit).unwrap());
+        self.write_buffer();
     }
 
-    pub fn get<K, V>(&mut self, page_id: usize, key: K) -> Option<V>
+    pub fn search_bucket<K, V>(&mut self, page_id: usize, key: K) -> Option<(usize, V)>
         where K: Serialize + Debug,
               V: DeserializeOwned + Debug {
         println!("[get] page_id: {}", page_id);
@@ -171,8 +171,8 @@ impl DbFile {
         let key_size = mem::size_of::<K>() as u64;
         let key_bytes = serialize(&key, Bounded(key_size)).unwrap();
 
-        if let Some(val_bytes) = self.buffer.get(&key_bytes) {
-            Some(deserialize(&val_bytes).unwrap())
+        if let Some((index, val_bytes)) = self.buffer.search_bucket(&key_bytes) {
+            Some((index, deserialize(&val_bytes).unwrap()))
         } else {
             None
         }

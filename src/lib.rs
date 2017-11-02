@@ -115,7 +115,7 @@ impl<K, V> LinHash<K, V>
             let new_bucket = Page::new(key_size, val_size);
             let old_bucket_records =
                 self.buckets.all_tuples_in_page::<K,V>(bucket_to_split);
-            // Replace the bucket to split with a fresh Bucket
+            // Replace the bucket to split with a fresh, empty page
             self.buckets.allocate_new_page::<K,V>(bucket_to_split);
 
             println!("{:?}", old_bucket_records);
@@ -140,42 +140,49 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Update the mapping of record with key `key`.
-    // pub fn update(&mut self, key: K, val: V) -> bool {
-    //     let bucket_index = self.bucket(&key);
-    //     let index_to_update = self.search_bucket(bucket_index, &key);
-
-    //     match index_to_update {
-    //         Some(x) => {
-    //             self.buckets[bucket_index][x] = (key, val);
-    //             true
-    //         },
-    //         None => false,
-    //     }
-    // }
+    pub fn update(&mut self, key: K, val: V) -> bool {
+        let bucket_index = self.bucket(&key);
+        match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
+            Some((pos, _old_val)) => {
+                println!("update: {:?}", (bucket_index, pos, key.clone(), val.clone()));
+                self.buckets.write_tuple(bucket_index, pos, key, val);
+                true
+            },
+            None => false,
+        }
+    }
 
     /// Insert (key,value) pair into the hashtable.
     pub fn put(&mut self, key: K, val: V) {
         let bucket_index = self.bucket(&key);
-        self.buckets.put(bucket_index, key, val);
-        self.nitems += 1;
-
+        match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
+            None => {
+                self.buckets.put(bucket_index, key, val);
+                self.nitems += 1;
+            },
+            Some((pos, _old_val)) => self.buckets.write_tuple(bucket_index, pos, key, val),
+        }
         self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
         self.maybe_split();
     }
 
-    pub fn reinsert(&mut self, key: K, val: V) {
+    /// Re-insert (key, value) pair after a split
+    fn reinsert(&mut self, key: K, val: V) {
         let bucket_index = self.bucket(&key);
         self.buckets.put(bucket_index, key, val);
 
         self.maybe_split();
     }
-
-
     
     /// Lookup `key` in hashtable
     pub fn get(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
-        self.buckets.get(bucket_index, key)
+        if let Some((_, val)) =
+            self.buckets.search_bucket(bucket_index, key) {
+                Some(val)
+            } else {
+                None
+            }
     }
 
     // Removes record with `key` in hashtable.
@@ -202,14 +209,16 @@ mod tests {
         h.put(String::from("there"), 13);
         h.put(String::from("foo"), 42);
         h.put(String::from("bar"), 11);
-        // h.put(String::from("bar"), 22);
+        // h.put(String::from("a really long sentence like really really long"), Some(22);
+        h.put(String::from("bar"), 22);
         // h.remove(String::from("there"));
-        // h.update(String::from("foo"), 84);
+        h.update(String::from("foo"), 84);
 
         assert_eq!(h.get(String::from("hello")), Some(12));
         assert_eq!(h.get(String::from("there")), Some(13));
-        assert_eq!(h.get(String::from("foo")), Some(42));
+        assert_eq!(h.get(String::from("foo")), Some(84));
         assert_eq!(h.get(String::from("bar")), Some(22));
+        
         // assert_eq!(h.update(String::from("doesn't exist"), 99), false);
         assert_eq!(h.contains(String::from("doesn't exist")), false);
         assert_eq!(h.contains(String::from("hello")), true);

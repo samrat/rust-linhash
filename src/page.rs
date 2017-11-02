@@ -3,8 +3,8 @@ use std::mem;
 use util::mem_move;
 use std::str;
 
-pub const PAGE_SIZE : usize = 4096;     // bytes
-pub const HEADER_SIZE : usize = 16;      // bytes
+pub const PAGE_SIZE : usize = 4096; // bytes
+pub const HEADER_SIZE : usize = 16; // bytes
 
 pub struct Page {
     pub id: usize,
@@ -55,21 +55,36 @@ impl Page {
 
     pub fn read_tuple(&mut self, row_num: usize) -> (&[u8], &[u8]) {
         let offsets = self.compute_offsets(row_num);
-        // println!("{} {:?} {:?}", self.id, offsets, self.storage.to_vec());
-
         let key = &self.storage[offsets.key_offset..offsets.val_offset];
         let val = &self.storage[offsets.val_offset..offsets.row_end];
         (key, val)
     }
 
-    pub fn put(&mut self, key: &[u8], val: &[u8]) {
-        let offsets = self.compute_offsets(self.num_tuples);
-        // println!("[page.put] page_id: {} key: {:?} val: {:?}", self.id, key.to_vec(), val.to_vec());
+    pub fn search_bucket(&mut self, key: &[u8]) -> Option<(usize, Vec<u8>)> {
+        let num_records = self.num_tuples;
+
+        for i in 0..num_records {
+            let (k, v) = self.read_tuple(i);
+            let v_vec = v.to_vec();
+            println!("{:?}", str::from_utf8(&k));
+            if k.iter().zip(key).all(|(a,b)| a == b) {
+                return Some((i, v_vec));
+            }
+        }
+        None
+    }
+
+    pub fn write_tuple(&mut self, row_num: usize, key: &[u8], val: &[u8]) {
+        let offsets = self.compute_offsets(row_num);
         mem_move(&mut self.storage[offsets.key_offset..offsets.val_offset],
                  key);
         mem_move(&mut self.storage[offsets.val_offset..offsets.row_end],
                  val);
-        // println!("storage: {:?}", self.storage.to_vec());
+    }
+
+    pub fn put(&mut self, key: &[u8], val: &[u8]) {
+        let row_num = self.num_tuples;
+        self.write_tuple(row_num, key, val);
         // TODO: check if it's not just a overwrite
         self.num_tuples += 1;
     }
@@ -87,14 +102,4 @@ impl Page {
         }
         None
     }
-
-
 }
-
-// impl KVStore for Page {
-//     fn put(&mut self, key: &[u8], val: &[u8]) {
-//         self.write_tuple(key, val)
-//     }
-
-
-// }
