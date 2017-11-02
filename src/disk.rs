@@ -18,6 +18,9 @@ use serde::de::{Deserialize, DeserializeOwned};
 
 pub struct DbFile {
     path: String,
+    // TODO: don't use separate cntrl file; use 0th page instead. This
+    // will require an "address translation" mechanism since the
+    // linear hashtable methods expect page 0 to be available.
     ctrl_file: File,
     file: File,
     ctrl_buffer: Page,
@@ -27,6 +30,7 @@ pub struct DbFile {
     tuples_per_page: usize,
     // changes made to `buffer`?
     dirty: bool,
+    overflow_free: usize,
 }
 
 impl DbFile {
@@ -66,6 +70,7 @@ impl DbFile {
             page_id: None,
             tuples_per_page: tuples_per_page,
             dirty: false,
+            overflow_free: 50,
         }
     }
 
@@ -79,6 +84,8 @@ impl DbFile {
             deserialize(&self.ctrl_buffer.storage[8..16]).unwrap();
         let nbuckets : usize =
             deserialize(&self.ctrl_buffer.storage[16..24]).unwrap();
+        self.overflow_free =
+            deserialize(&self.ctrl_buffer.storage[24..32]).unwrap();
         (nbits, nitems, nbuckets)
     }
 
@@ -89,6 +96,7 @@ impl DbFile {
         let nbits_bytes = &serialize(&nbits, Bounded(8)).unwrap();
         let nitems_bytes = &serialize(&nitems, Bounded(8)).unwrap();
         let nbuckets_bytes = &serialize(&nbuckets, Bounded(8)).unwrap();
+        let overflow_free_bytes = &serialize(&self.overflow_free, Bounded(8)).unwrap();
         println!("nbits: {:?} nitems: {:?} nbuckets: {:?}", nbits_bytes,
                  nitems_bytes, nbuckets_bytes);
         mem_move(&mut self.ctrl_buffer.storage[0..8],
@@ -97,6 +105,8 @@ impl DbFile {
                  nitems_bytes);
         mem_move(&mut self.ctrl_buffer.storage[16..24],
                  nbuckets_bytes);
+        mem_move(&mut self.ctrl_buffer.storage[24..32],
+                 overflow_free_bytes);
         DbFile::write_page(&mut self.ctrl_file,
                            0,
                            &self.ctrl_buffer.storage);
@@ -104,12 +114,28 @@ impl DbFile {
 
     fn read_header(&mut self) {
         let num_tuples : usize = deserialize(&self.buffer.storage[0..8]).unwrap();
+        let next : usize = deserialize(&self.buffer.storage[8..16]).unwrap();
+        let prev : usize = deserialize(&self.buffer.storage[16..24]).unwrap();
         self.buffer.num_tuples = num_tuples;
+        self.buffer.next = if next != 0 {
+            Some(next)
+        } else {
+            None
+        };
+        self.buffer.prev = if prev != 0 {
+            Some(prev)
+        } else {
+            None
+        };
     }
 
     fn write_header(&mut self) {
         mem_move(&mut self.buffer.storage[0..8],
                  &serialize(&self.buffer.num_tuples, Bounded(8)).unwrap());
+        mem_move(&mut self.buffer.storage[8..16],
+                 &serialize(&self.buffer.next, Bounded(8)).unwrap());
+        mem_move(&mut self.buffer.storage[16..24],
+                 &serialize(&self.buffer.prev, Bounded(8)).unwrap());
     }
 
     pub fn get_ctrl_page(&mut self) {
@@ -163,7 +189,7 @@ impl DbFile {
         self.write_buffer();
     }
 
-    pub fn search_bucket<K, V>(&mut self, page_id: usize, key: K) -> Option<(usize, V)>
+    pub fn search_bucket<K, V>(&mut self, page_id: usize, key: K) -> (Option<usize>, Option<V>)
         where K: Serialize + Debug,
               V: DeserializeOwned + Debug {
         println!("[get] page_id: {}", page_id);
@@ -171,10 +197,11 @@ impl DbFile {
         let key_size = mem::size_of::<K>() as u64;
         let key_bytes = serialize(&key, Bounded(key_size)).unwrap();
 
-        if let Some((index, val_bytes)) = self.buffer.search_bucket(&key_bytes) {
-            Some((index, deserialize(&val_bytes).unwrap()))
-        } else {
-            None
+        match self.buffer.search_bucket(&key_bytes) {
+            (Some(index), Some(val_bytes)) =>
+                (Some(index), Some(deserialize(&val_bytes).unwrap())),
+            (Some(index), None) => (Some(index), None),
+            _ => (None, None),
         }
     }
 

@@ -4,14 +4,17 @@ use util::mem_move;
 use std::str;
 
 pub const PAGE_SIZE : usize = 4096; // bytes
-pub const HEADER_SIZE : usize = 16; // bytes
+pub const HEADER_SIZE : usize = 24; // bytes
 
 pub struct Page {
     pub id: usize,
     pub storage: [u8; PAGE_SIZE],
     pub num_tuples: usize,
     // page_id of overflow bucket
-    next: Option<usize>,
+    pub next: Option<usize>,
+    // prev bucket in linked list(of overflow buckets)
+    pub prev: Option<usize>,
+
     key_size: usize,
     val_size: usize,
 }
@@ -31,6 +34,7 @@ impl Page {
             num_tuples: 0,
             storage: [0; PAGE_SIZE],
             next: None,
+            prev: None,
             key_size: key_size,
             val_size: val_size,
         }
@@ -60,7 +64,10 @@ impl Page {
         (key, val)
     }
 
-    pub fn search_bucket(&mut self, key: &[u8]) -> Option<(usize, Vec<u8>)> {
+    // If record with key is found returns(row_num, val). If not found
+    // _and_ there is space to insert it, returns (row_num,
+    // None). Else, returns (None, None).
+    pub fn search_bucket(&mut self, key: &[u8]) -> (Option<usize>, Option<Vec<u8>>) {
         let num_records = self.num_tuples;
 
         for i in 0..num_records {
@@ -68,10 +75,18 @@ impl Page {
             let v_vec = v.to_vec();
             println!("{:?}", str::from_utf8(&k));
             if k.iter().zip(key).all(|(a,b)| a == b) {
-                return Some((i, v_vec));
+                return (Some(i), Some(v_vec))
             }
         }
-        None
+
+        // Check if there is space in page to insert a record
+        let total_record_size = HEADER_SIZE + self.key_size + self.val_size;
+        let records_per_page = PAGE_SIZE / total_record_size;
+        if num_records >= records_per_page {
+            (None, None)
+        } else {
+            (Some(num_records), None)
+        }
     }
 
     pub fn write_tuple(&mut self, row_num: usize, key: &[u8], val: &[u8]) {

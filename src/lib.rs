@@ -143,12 +143,12 @@ impl<K, V> LinHash<K, V>
     pub fn update(&mut self, key: K, val: V) -> bool {
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
-            Some((pos, _old_val)) => {
+            (Some(pos), Some(_old_val)) => {
                 println!("update: {:?}", (bucket_index, pos, key.clone(), val.clone()));
                 self.buckets.write_tuple(bucket_index, pos, key, val);
                 true
             },
-            None => false,
+            _ => false,
         }
     }
 
@@ -156,11 +156,16 @@ impl<K, V> LinHash<K, V>
     pub fn put(&mut self, key: K, val: V) {
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
-            None => {
+            (Some(_), None) => {
                 self.buckets.put(bucket_index, key, val);
                 self.nitems += 1;
             },
-            Some((pos, _old_val)) => self.buckets.write_tuple(bucket_index, pos, key, val),
+            (Some(pos), Some(_old_val)) =>
+                self.buckets.write_tuple(bucket_index, pos, key, val),
+            (None, None) => {
+                // TODO: overflow
+            },
+            (None, Some(_)) => panic!("impossible case"),
         }
         self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
         self.maybe_split();
@@ -177,7 +182,7 @@ impl<K, V> LinHash<K, V>
     /// Lookup `key` in hashtable
     pub fn get(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
-        if let Some((_, val)) =
+        if let (Some(_), Some(val)) =
             self.buckets.search_bucket(bucket_index, key) {
                 Some(val)
             } else {
