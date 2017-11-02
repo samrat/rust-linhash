@@ -227,5 +227,6 @@ impl DbFile {
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
         self.dirty = false;
+        self.write_buffer();
     }
 }
