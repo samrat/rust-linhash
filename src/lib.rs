@@ -99,7 +99,8 @@ impl<K, V> LinHash<K, V>
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.nbuckets += 1;
-            let _ = self.buckets.allocate_new_page::<K,V>(self.nbuckets);
+
+            self.buckets.allocate_new_bucket::<K,V>();
             if self.nbuckets > (1 << self.nbits) {
                 self.nbits += 1;
             }
@@ -107,7 +108,8 @@ impl<K, V> LinHash<K, V>
             // Take index of last item added(the `push` above) and
             // subtract the 1 at the MSB position. eg: after bucket 11
             // is added, bucket 01 needs to be split
-            let bucket_to_split = (self.nbuckets-1) ^ (1 << (self.nbits-1));
+            let bucket_to_split =
+                (self.nbuckets-1) ^ (1 << (self.nbits-1));
             println!("nbits: {} nitems: {} nbuckets: {} splitting {}",
                      self.nbits, self.nitems, self.nbuckets, bucket_to_split);
 
@@ -117,7 +119,7 @@ impl<K, V> LinHash<K, V>
             // Replace the bucket to split with a fresh, empty
             // page. And get a list of all tuples stored in the bucket
             let old_bucket_records =
-                self.buckets.allocate_new_page::<K,V>(bucket_to_split);
+                self.buckets.clear_bucket::<K,V>(bucket_to_split);
 
             println!("{:?}", old_bucket_records);
             // Re-hash all records in old_bucket. Ideally, about half
@@ -212,6 +214,7 @@ impl<K, V> LinHash<K, V>
 #[cfg(test)]
 mod tests {
     use LinHash;
+    use std::fs;
     
     #[test]
     fn all_ops() {
@@ -233,5 +236,19 @@ mod tests {
         // assert_eq!(h.update(String::from("doesn't exist"), 99), false);
         assert_eq!(h.contains(String::from("doesn't exist")), false);
         assert_eq!(h.contains(String::from("hello")), true);
+
+        fs::remove_file("/tmp/test_all_ops");
+    }
+
+    #[test]
+    fn test_persistence() {
+        let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_persistence");
+        h.put(String::from("hello"), 12);
+
+        // This reloads the file and creates a new hashtable
+        let mut h2 : LinHash<String, i32> = LinHash::new("/tmp/test_persistence");
+        assert_eq!(h2.get(String::from("hello")), Some(12));
+
+        fs::remove_file("/tmp/test_persistence");
     }
 }
