@@ -3,7 +3,7 @@ use std::mem;
 use util::mem_move;
 use std::str;
 
-pub const PAGE_SIZE : usize = 4096; // bytes
+pub const PAGE_SIZE : usize = 256; // bytes
 pub const HEADER_SIZE : usize = 24; // bytes
 
 pub struct Page {
@@ -40,6 +40,8 @@ impl Page {
         }
     }
 
+    /// Compute where in the page the row should be placed. Within the
+    /// row, calculate the offsets of the header, key and value.
     fn compute_offsets(&self, row_num: usize) -> RowOffsets {
         let total_size = HEADER_SIZE + self.key_size + self.val_size;
 
@@ -67,7 +69,7 @@ impl Page {
     // If record with key is found returns(row_num, val). If not found
     // _and_ there is space to insert it, returns (row_num,
     // None). Else, returns (None, None).
-    pub fn search_bucket(&mut self, key: &[u8]) -> (Option<usize>, Option<Vec<u8>>) {
+    pub fn search_page(&mut self, key: &[u8]) -> (Option<usize>, Option<Vec<u8>>) {
         let num_records = self.num_tuples;
 
         for i in 0..num_records {
@@ -89,6 +91,8 @@ impl Page {
         }
     }
 
+    /// Write tuple to offset specified by `row_num`. The offset is
+    /// calculated to accomodate header as well.
     pub fn write_tuple(&mut self, row_num: usize, key: &[u8], val: &[u8]) {
         let offsets = self.compute_offsets(row_num);
         mem_move(&mut self.storage[offsets.key_offset..offsets.val_offset],
@@ -97,13 +101,19 @@ impl Page {
                  val);
     }
 
-    pub fn put(&mut self, key: &[u8], val: &[u8]) {
-        let row_num = self.num_tuples;
-        self.write_tuple(row_num, key, val);
-        // TODO: check if it's not just a overwrite
+    /// Increment number of tuples in page
+    pub fn incr_num_tuples(&mut self) {
         self.num_tuples += 1;
     }
 
+    /// Insert record into page. Row number is not necessary here.
+    pub fn put(&mut self, key: &[u8], val: &[u8]) {
+        let row_num = self.num_tuples;
+        self.write_tuple(row_num, key, val);
+        self.num_tuples += 1;
+    }
+
+    /// Lookup `key` in page.
     pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
         let num_records = self.num_tuples;
 

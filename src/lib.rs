@@ -4,7 +4,7 @@ use std::mem;
 use std::marker::PhantomData;
 use std::fmt::Debug;
 
-// TODO: implement update/remove
+// TODO: implement remove
 
 extern crate serde;
 extern crate bincode;
@@ -13,7 +13,7 @@ mod page;
 mod disk;
 
 use page::Page;
-use disk::DbFile;
+use disk::{DbFile,SearchResult};
 use serde::ser::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -94,7 +94,6 @@ impl<K, V> LinHash<K, V>
 
     /// Note that, the bucket split is not necessarily the one just
     /// inserted to.
-    // TODO: move overflow buckets once nbuckets == overflow_start
     fn maybe_split(&mut self) -> bool {
         if self.split_needed() {
             self.nbuckets += 1;
@@ -145,10 +144,15 @@ impl<K, V> LinHash<K, V>
     pub fn update(&mut self, key: K, val: V) -> bool {
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
-            (Some(pos), Some(_old_val)) => {
-                println!("update: {:?}", (bucket_index, pos, key.clone(), val.clone()));
-                self.buckets.write_tuple(bucket_index, pos, key, val);
-                true
+            SearchResult { page_id, row_num, val: old_val } => {
+                match (page_id, row_num, old_val) {
+                    (Some(page_id), Some(row_num), Some(_)) => {
+                        println!("update: {:?}", (page_id, row_num, key.clone(), val.clone()));
+                        self.buckets.write_tuple(page_id, row_num, key, val);
+                        true
+                    }
+                    _ => false,          
+                }
             },
             _ => false,
         }
@@ -156,23 +160,33 @@ impl<K, V> LinHash<K, V>
 
     /// Insert (key,value) pair into the hashtable.
     pub fn put(&mut self, key: K, val: V) {
+        println!("[put] {:?}", (key.clone(), val.clone()));
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
-            (Some(_), None) => {
-                self.buckets.put(bucket_index, key, val);
-                self.nitems += 1;
+            SearchResult { page_id, row_num, val: old_val } => {
+                println!("{:?}", (page_id, row_num, old_val.clone()));
+                match (page_id, row_num, old_val) {
+                    // new insert
+                    (Some(page_id), Some(pos), None) => {
+                        self.buckets.write_tuple_incr(page_id, pos, key, val);
+                        self.nitems += 1;
+                    },
+                    // case for update
+                    (Some(page_id), Some(pos), Some(_old_val)) =>
+                        self.buckets.write_tuple(page_id, pos, key, val),
+                    // new insert, in overflow page
+                    (None, None, None) => {
+                        println!("allocating new buffer for bucket: {}", bucket_index);
+                        // overflow
+                        let overflow_index = self.buckets.allocate_overflow::<K,V>(bucket_index);
+                        self.buckets.put(overflow_index, key, val);
+                        self.nitems += 1;
+                    },
+                    _ => panic!("impossible case"),
+                }
             },
-            (Some(pos), Some(_old_val)) => // update old value
-                self.buckets.write_tuple(bucket_index, pos, key, val),
-            (None, None) => {
-                // TODO: overflow
-                let overflow_index = self.buckets.allocate_overflow::<K,V>(bucket_index);
-                self.buckets.put(overflow_index, key, val);
-                self.nitems += 1;
-            },
-            (None, Some(_)) => panic!("impossible case"),
         }
-        self.maybe_split();
+        // self.maybe_split();
         self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
     }
 
@@ -181,18 +195,14 @@ impl<K, V> LinHash<K, V>
         let bucket_index = self.bucket(&key);
         self.buckets.put(bucket_index, key, val);
 
-        self.maybe_split();
+        // self.maybe_split();
     }
     
     /// Lookup `key` in hashtable
     pub fn get(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
-        match self.buckets.search_bucket(bucket_index, key) {
-            (Some(_), Some(val)) => Some(val),
-            (Some(_), None) => {
-                // TODO: check overflow bucket
-                None
-            },
+        match self.buckets.search_bucket::<K,V>(bucket_index, key) {
+            SearchResult { page_id, row_num, val } => val,
             _ => None,
         }
     }
@@ -222,10 +232,8 @@ mod tests {
         h.put(String::from("there"), 13);
         h.put(String::from("foo"), 42);
         h.put(String::from("bar"), 11);
-        // h.put(String::from("a really long sentence like really really long"), Some(22);
         h.put(String::from("bar"), 22);
-        // h.remove(String::from("there"));
-        h.update(String::from("foo"), 84);
+        // h.update(String::from("foo"), 84);
 
         assert_eq!(h.get(String::from("hello")), Some(12));
         assert_eq!(h.get(String::from("there")), Some(13));

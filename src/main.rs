@@ -50,9 +50,18 @@ fn main() {
     h.put(String::from("space"), 19);
     h.put(String::from("random"), 20);
     h.put(String::from("keys"), 21);
+    h.put(String::from("samrat"), 22);
+    h.put(String::from("linhash"), 21);
+    h.put(String::from("rust"), 21);
+    h.put(String::from("3:30"), 21);
+    h.put(String::from("xinu"), 21);
+    h.put(String::from("linhash1"), 21);
+    h.put(String::from("rust1"), 22);
+    // h.put(String::from("3:302"), 23);
+    h.put(String::from("xinu3"), 24);
     // h.remove(String::from("bar"));
 
     // measure_perf(4);
 
-    println!("{:?}", h.get(String::from("linear")));
+    println!("{:?}", h.get(String::from("rust1")));
 }

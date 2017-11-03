@@ -18,6 +18,20 @@ use serde::de::{Deserialize, DeserializeOwned};
 
 const CTRL_HEADER_SIZE : usize = 32; // bytes
 
+pub struct SearchResult<V> {
+    pub page_id: Option<usize>,
+    pub row_num: Option<usize>,
+    pub val: Option<V>
+}
+
+fn flatten<T>(v: Vec<(usize, Vec<T>)>) -> Vec<T> {
+    let mut result = vec![];
+    for (_, mut i) in v {
+        result.append(&mut i);
+    }
+    result
+}
+
 pub struct DbFile {
     path: String,
     // TODO: don't use separate cntrl file; use 0th page instead. This
@@ -53,7 +67,7 @@ impl DbFile {
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let total_size = keysize + valsize;
-        let tuples_per_page = PAGE_SIZE / total_size;
+        let tuples_per_page = (PAGE_SIZE-HEADER_SIZE) / total_size;
         DbFile {
             path: String::from(filename),
             file: file,
@@ -133,12 +147,14 @@ impl DbFile {
     }
 
     fn write_header(&mut self) {
+        println!("[write_header] id={:?} {:?} {:?}", self.page_id, self.buffer.next, self.bucket_to_page);
+
         mem_move(&mut self.buffer.storage[0..8],
                  &serialize(&self.buffer.num_tuples, Bounded(8)).unwrap());
         mem_move(&mut self.buffer.storage[8..16],
-                 &serialize(&self.buffer.next, Bounded(8)).unwrap());
+                 &serialize(&self.buffer.next.unwrap_or(0), Bounded(10)).unwrap());
         mem_move(&mut self.buffer.storage[16..24],
-                 &serialize(&self.buffer.prev, Bounded(8)).unwrap());
+                 &serialize(&self.buffer.next.unwrap_or(0), Bounded(10)).unwrap());
     }
 
     pub fn get_ctrl_page(&mut self) {
@@ -180,7 +196,7 @@ impl DbFile {
         DbFile::write_page(&self.file, page_id, data);
     }
 
-    // Writes data in `data` into page `page_id`
+    /// Writes data in `data` into page `page_id`
     pub fn write_page(mut file: &File, page_id: usize, data: &[u8]) {
         let offset = (page_id * PAGE_SIZE) as u64;
         file.seek(SeekFrom::Start(offset))
@@ -190,10 +206,12 @@ impl DbFile {
         file.flush().expect("flush failed");
     }
 
-    pub fn write_tuple<K, V>(&mut self, bucket_id: usize, row_num: usize, key: K, val: V)
+    /// Write tuple but don't increment `num_tuples`. Used when
+    /// updating already existing record.
+    pub fn write_tuple<K, V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
-        self.get_bucket(bucket_id);
+        self.get_page(page_id);
 
         // The maximum sizes of the encoded key and val.
         let key_limit = Bounded(mem::size_of::<K>() as u64);
@@ -206,38 +224,75 @@ impl DbFile {
         self.write_buffer();
     }
 
-    pub fn search_bucket<K, V>(&mut self, bucket_id: usize, key: K) -> (Option<usize>, Option<V>)
-        where K: Serialize + Debug,
-              V: DeserializeOwned + Debug {
-        println!("[get] bucket_id: {}", bucket_id);
-        self.get_bucket(bucket_id);
-        let key_size = mem::size_of::<K>() as u64;
-        let key_bytes = serialize(&key, Bounded(key_size)).unwrap();
-
-        match self.buffer.search_bucket(&key_bytes) {
-            (Some(index), Some(val_bytes)) =>
-                (Some(index), Some(deserialize(&val_bytes).unwrap())),
-            (Some(index), None) => (Some(index), None),
-            _ => (None, None),
-        }
+    /// Write tuple and increment `num_tuples`. Used when inserting
+    /// new record.
+    pub fn write_tuple_incr<K,V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
+        where K: Serialize,
+              V: Serialize {
+        self.buffer.incr_num_tuples();
+        self.write_tuple(page_id, row_num, key, val);
     }
 
+    /// Searches for `key` in `bucket`. A bucket is a linked list of
+    /// pages.
+    pub fn search_bucket<K, V>(&mut self, bucket_id: usize, key: K) ->
+        SearchResult<V>
+        where K: DeserializeOwned + Debug + PartialEq,
+              V: DeserializeOwned + Debug {
+        println!("[get] bucket_id: {}", bucket_id);
+        let all_tuples_in_bucket =
+            self.all_tuples_in_bucket::<K,V>(bucket_id);
+
+        let mut first_free_row = SearchResult {
+            page_id: None,
+            row_num: None,
+            val: None,
+        };
+
+        for (i, page_tuples) in all_tuples_in_bucket.into_iter() {
+            let len = page_tuples.len();
+            for (row_num, (k,v)) in page_tuples.into_iter().enumerate() {
+                if k == key {
+                    return SearchResult{
+                        page_id: Some(i),
+                        row_num: Some(row_num),
+                        val: Some(v)
+                    }
+                }
+            }
+
+            if len < 4 {        // TODO: fix with tuples_per_page
+                first_free_row = SearchResult {
+                    page_id: Some(i),
+                    row_num: Some(len),
+                    val: None,
+                }
+            }
+        }
+
+        first_free_row
+    }
+
+    /// Add a new overflow page to a `bucket`.
     pub fn allocate_overflow<K,V>(&mut self, bucket_id: usize) -> usize
         where K: DeserializeOwned + Debug,
               V: DeserializeOwned + Debug {
-        self.get_bucket(bucket_id);
-
-        let overflow_index = self.allocate_new_page::<K,V>();
-        self.bucket_to_page.push(overflow_index);
-
-        self.buffer.next = Some(overflow_index);
+        // Write next of old page
+        self.buffer.next = Some(self.free_page);
+        self.write_header();
         self.write_buffer();
 
-        self.get_page(overflow_index);
+        let physical_index = self.allocate_new_page::<K,V>();
+        self.bucket_to_page.push(physical_index);
+        println!("{}'s next: physical_index: {}", self.buffer.id, physical_index);
+
+        self.get_page(physical_index);
         self.buffer.prev = Some(self.bucket_to_page(bucket_id));
         self.write_buffer();
 
-        overflow_index
+
+        // virtual address
+        physical_index - 1
     }
 
     pub fn put<K,V>(&mut self, bucket_id: usize, key: K, val: V)
@@ -266,65 +321,44 @@ impl DbFile {
                            &self.buffer.storage);
     }
 
-    /// Returns a vector with all tuples in the block
-    fn all_tuples_in_page<K, V>(&mut self, page_id: usize)
-                                    -> Vec<(K,V)>
-        where K: DeserializeOwned + Debug,
-              V: DeserializeOwned + Debug {
-        self.get_page(page_id);
-        let mut records = Vec::new();
-        for i in 0..self.buffer.num_tuples {
-            let (k, v) = self.buffer.read_tuple(i);
-            let (dk, dv) : (K, V) = deserialize_kv::<K,V>(&k, &v);
-            records.push((dk, dv));
-        }
-
-        records
-    }
-
+    /// Returns a vec of (page_id, tuples_in_vec). ie. each inner
+    /// vector represents the tuples in a page in the bucket.
     fn all_tuples_in_bucket<K, V>(&mut self, bucket_id: usize)
-                                  -> Vec<(K,V)>
+                                  -> Vec<(usize, Vec<(K,V)>)>
         where K: DeserializeOwned + Debug,
               V: DeserializeOwned + Debug {
         self.get_bucket(bucket_id);
         let mut records = Vec::new();
+
+        let mut page_tuples = vec![];
         for i in 0..self.buffer.num_tuples {
             let (k, v) = self.buffer.read_tuple(i);
+            println!("k,v = {:?}", (k,v));
             let (dk, dv) : (K, V) = deserialize_kv::<K,V>(&k, &v);
-            records.push((dk, dv));
+            page_tuples.push((dk, dv));
         }
+        records.push((self.page_id.unwrap(), page_tuples));
 
-        let next = self.buffer.next;
-        while let Some(page_id) = next {
+        while let Some(page_id) = self.buffer.next {
+            if page_id == 0 {
+                break;
+            }
+
             self.get_page(page_id);
+            let mut page_tuples = vec![];
             for i in 0..self.buffer.num_tuples {
                 let (k, v) = self.buffer.read_tuple(i);
                 let (dk, dv) : (K, V) = deserialize_kv::<K,V>(&k, &v);
-                records.push((dk, dv));
+
+                page_tuples.push((dk, dv));
             }
+            records.push((page_id, page_tuples));
         }
 
         records
     }
 
-    /// Clear out block `page_id` in disk. Returns a list of all
-    /// tuples that were present in the block.
-    fn clear_page<K,V>(&mut self, page_id: usize) -> Vec<(K,V)>
-        where K: DeserializeOwned + Debug,
-              V: DeserializeOwned + Debug {
-        let keysize = mem::size_of::<K>();
-        let valsize = mem::size_of::<V>();
-        let new_page = Page::new(keysize, valsize);
-        let tuples = self.all_tuples_in_page::<K,V>(page_id);
-        mem::replace(&mut self.buffer, new_page);
-        self.buffer.id = page_id;
-        self.page_id = Some(page_id);
-        self.dirty = false;
-        self.write_buffer();
-
-        tuples
-    }
-
+    /// Allocate a new page.
     fn allocate_new_page<K,V>(&mut self) -> usize {
         let page_id = self.free_page;
         let keysize = mem::size_of::<K>();
@@ -348,7 +382,7 @@ impl DbFile {
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let new_page = Page::new(keysize, valsize);
-        let tuples = self.all_tuples_in_bucket::<K,V>(bucket_id);
+        let tuples = flatten(self.all_tuples_in_bucket::<K,V>(bucket_id));
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
