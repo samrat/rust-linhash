@@ -64,8 +64,8 @@ impl DbFile {
 
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
-        let total_size = keysize + valsize;
-        let tuples_per_page = (PAGE_SIZE-HEADER_SIZE) / total_size;
+        let total_size = HEADER_SIZE + keysize + valsize;
+        let tuples_per_page = PAGE_SIZE / total_size;
         DbFile {
             path: String::from(filename),
             file: file,
@@ -259,7 +259,7 @@ impl DbFile {
                 }
             }
 
-            if len < 4 {        // TODO: fix with tuples_per_page
+            if len < self.tuples_per_page {
                 first_free_row = SearchResult {
                     page_id: Some(i),
                     row_num: Some(len),

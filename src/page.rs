@@ -3,7 +3,7 @@ use std::mem;
 use util::mem_move;
 use std::str;
 
-pub const PAGE_SIZE : usize = 256; // bytes
+pub const PAGE_SIZE : usize = 4096; // bytes
 pub const HEADER_SIZE : usize = 24; // bytes
 
 pub struct Page {
