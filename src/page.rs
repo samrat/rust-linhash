@@ -66,31 +66,6 @@ impl Page {
         (key, val)
     }
 
-    // If record with key is found returns(row_num, val). If not found
-    // _and_ there is space to insert it, returns (row_num,
-    // None). Else, returns (None, None).
-    pub fn search_page(&mut self, key: &[u8]) -> (Option<usize>, Option<Vec<u8>>) {
-        let num_records = self.num_tuples;
-
-        for i in 0..num_records {
-            let (k, v) = self.read_tuple(i);
-            let v_vec = v.to_vec();
-            println!("{:?}", str::from_utf8(&k));
-            if k.iter().zip(key).all(|(a,b)| a == b) {
-                return (Some(i), Some(v_vec))
-            }
-        }
-
-        // Check if there is space in page to insert a record
-        let total_record_size = HEADER_SIZE + self.key_size + self.val_size;
-        let records_per_page = PAGE_SIZE / total_record_size;
-        if num_records >= records_per_page {
-            (None, None)
-        } else {
-            (Some(num_records), None)
-        }
-    }
-
     /// Write tuple to offset specified by `row_num`. The offset is
     /// calculated to accomodate header as well.
     pub fn write_tuple(&mut self, row_num: usize, key: &[u8], val: &[u8]) {

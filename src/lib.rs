@@ -102,7 +102,7 @@ impl<K, V> LinHash<K, V>
             if self.nbuckets > (1 << self.nbits) {
                 self.nbits += 1;
             }
-            
+
             // Take index of last item added(the `push` above) and
             // subtract the 1 at the MSB position. eg: after bucket 11
             // is added, bucket 01 needs to be split
@@ -151,7 +151,7 @@ impl<K, V> LinHash<K, V>
                         self.buckets.write_tuple(page_id, row_num, key, val);
                         true
                     }
-                    _ => false,          
+                    _ => false,
                 }
             },
             _ => false,
@@ -197,7 +197,7 @@ impl<K, V> LinHash<K, V>
 
         // self.maybe_split();
     }
-    
+
     /// Lookup `key` in hashtable
     pub fn get(&mut self, key: K) -> Option<V> {
         let bucket_index = self.bucket(&key);
@@ -224,7 +224,7 @@ impl<K, V> LinHash<K, V>
 mod tests {
     use LinHash;
     use std::fs;
-    
+
     #[test]
     fn all_ops() {
         let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_all_ops");
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(h.get(String::from("there")), Some(13));
         assert_eq!(h.get(String::from("foo")), Some(84));
         assert_eq!(h.get(String::from("bar")), Some(22));
-        
+
         // assert_eq!(h.update(String::from("doesn't exist"), 99), false);
         assert_eq!(h.contains(String::from("doesn't exist")), false);
         assert_eq!(h.contains(String::from("hello")), true);

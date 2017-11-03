@@ -57,6 +57,8 @@ fn main() {
     h.put(String::from("xinu"), 21);
     h.put(String::from("linhash1"), 21);
     h.put(String::from("rust1"), 22);
+
+    h.update(String::from("rust1"), 2222);
     // h.put(String::from("3:302"), 23);
     h.put(String::from("xinu3"), 24);
     // h.remove(String::from("bar"));
