@@ -34,16 +34,14 @@ fn flatten<T>(v: Vec<(usize, Vec<T>)>) -> Vec<T> {
 
 pub struct DbFile {
     path: String,
-    // TODO: don't use separate cntrl file; use 0th page instead. This
-    // will require an "address translation" mechanism since the
-    // linear hashtable methods expect page 0 to be available.
     file: File,
     ctrl_buffer: Page,
     pub buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
     pub tuples_per_page: usize,
-    // changes made to `buffer`?
+    // changes made to `buffer`? (TODO: this flag is not used right
+    // now)
     dirty: bool,
     bucket_to_page: Vec<usize>,
     free_page: usize,
