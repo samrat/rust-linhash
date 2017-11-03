@@ -28,7 +28,7 @@ pub struct DbFile {
     pub buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
-    tuples_per_page: usize,
+    pub tuples_per_page: usize,
     // changes made to `buffer`?
     dirty: bool,
     bucket_to_page: Vec<usize>,
@@ -96,7 +96,7 @@ impl DbFile {
         let free_page_bytes = &serialize(&self.free_page, Bounded(8)).unwrap();
         let bucket_to_page_size = PAGE_SIZE-CTRL_HEADER_SIZE;
         let bucket_to_page_bytes =
-            &serialize(&self.free_page,
+            &serialize(&self.bucket_to_page,
                        Bounded(bucket_to_page_size as u64)).unwrap();
         println!("nbits: {:?} nitems: {:?} nbuckets: {:?}", nbits_bytes,
                  nitems_bytes, nbuckets_bytes);

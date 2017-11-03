@@ -39,7 +39,6 @@ impl<K, V> LinHash<K, V>
         let nitems = 0;
         let nbuckets = 2;
         LinHash {
-            // TODO: randomize filename (?)
             buckets: DbFile::new::<K,V>(filename),
             nbits: nbits,
             nitems: nitems,
@@ -85,7 +84,7 @@ impl<K, V> LinHash<K, V>
 
     /// Returns true if the `load` exceeds `LinHash::THRESHOLD`
     fn split_needed(&self) -> bool {
-        (self.nitems as f32 / self.nbuckets as f32) >
+        (self.nitems as f32 / (self.buckets.tuples_per_page * self.nbuckets) as f32) >
             LinHash::<K,V>::THRESHOLD
     }
 
@@ -173,8 +172,8 @@ impl<K, V> LinHash<K, V>
             },
             (None, Some(_)) => panic!("impossible case"),
         }
-        self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
         self.maybe_split();
+        self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
     }
 
     /// Re-insert (key, value) pair after a split
@@ -244,9 +243,12 @@ mod tests {
     fn test_persistence() {
         let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_persistence");
         h.put(String::from("hello"), 12);
+        h.put(String::from("world"), 13);
+        h.put(String::from("linear"), 144);
+        h.put(String::from("hashing"), 999);
 
         // This reloads the file and creates a new hashtable
-        let mut h2 : LinHash<String, i32> = LinHash::new("/tmp/test_persistence");
+        let mut h2 : LinHash<String, i32> = LinHash::open("/tmp/test_persistence");
         assert_eq!(h2.get(String::from("hello")), Some(12));
 
         fs::remove_file("/tmp/test_persistence");
