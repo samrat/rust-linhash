@@ -59,9 +59,6 @@ impl DbFile {
             Err(e) => panic!(e),
         };
 
-        let mut ctrl_filename = String::from(filename);
-        ctrl_filename.push_str("_ctrl");
-
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let total_size = HEADER_SIZE + keysize + valsize;
@@ -176,6 +173,10 @@ impl DbFile {
         match self.page_id {
             Some(p) if p == page_id => (),
             Some(_) | None => {
+                if self.dirty {
+                    println!("writing {} and resetting dirty bit", self.buffer.id);
+                    self.write_buffer();
+                }
                 self.dirty = false;
                 let offset = (page_id * PAGE_SIZE) as u64;
                 self.file.seek(SeekFrom::Start(offset))
@@ -219,7 +220,6 @@ impl DbFile {
         self.buffer.write_tuple(row_num,
                                 &serialize(&key, key_limit).unwrap(),
                                 &serialize(&val, val_limit).unwrap());
-        self.write_buffer();
     }
 
     /// Write tuple and increment `num_tuples`. Used when inserting
@@ -277,7 +277,6 @@ impl DbFile {
               V: DeserializeOwned + Debug {
         // Write next of old page
         self.buffer.next = Some(self.free_page);
-        self.write_header();
         self.write_buffer();
 
         let physical_index = self.allocate_new_page::<K,V>();
@@ -304,10 +303,6 @@ impl DbFile {
         let val_bytes = serialize(&val, Bounded(val_size)).unwrap();
         self.dirty = true;
         self.buffer.put(&key_bytes, &val_bytes);
-        // TODO: avoid writing to file after every update. ie. only
-        // write to file once the page needs to get evicted from
-        // `buffer`.
-        self.write_buffer();
     }
 
     /// Write out page in `buffer` to file.

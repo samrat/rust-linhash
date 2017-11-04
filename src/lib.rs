@@ -233,7 +233,7 @@ mod tests {
         h.put(String::from("foo"), 42);
         h.put(String::from("bar"), 11);
         h.put(String::from("bar"), 22);
-        // h.update(String::from("foo"), 84);
+        h.update(String::from("foo"), 84);
 
         assert_eq!(h.get(String::from("hello")), Some(12));
         assert_eq!(h.get(String::from("there")), Some(13));
