@@ -84,7 +84,7 @@ impl<K, V> LinHash<K, V>
 
     /// Returns true if the `load` exceeds `LinHash::THRESHOLD`
     fn split_needed(&self) -> bool {
-        (self.nitems as f32 / (self.buckets.tuples_per_page * self.nbuckets) as f32) >
+        (self.nitems as f32 / (self.buckets.records_per_page * self.nbuckets) as f32) >
             LinHash::<K,V>::THRESHOLD
     }
 
@@ -115,7 +115,7 @@ impl<K, V> LinHash<K, V>
             let val_size = mem::size_of::<V>();
 
             // Replace the bucket to split with a fresh, empty
-            // page. And get a list of all tuples stored in the bucket
+            // page. And get a list of all records stored in the bucket
             let old_bucket_records =
                 self.buckets.clear_bucket::<K,V>(bucket_to_split);
 
@@ -148,7 +148,7 @@ impl<K, V> LinHash<K, V>
                 match (page_id, row_num, old_val) {
                     (Some(page_id), Some(row_num), Some(_)) => {
                         println!("update: {:?}", (page_id, row_num, key.clone(), val.clone()));
-                        self.buckets.write_tuple(page_id, row_num, key, val);
+                        self.buckets.write_record(page_id, row_num, key, val);
                         true
                     }
                     _ => false,
@@ -168,12 +168,12 @@ impl<K, V> LinHash<K, V>
                 match (page_id, row_num, old_val) {
                     // new insert
                     (Some(page_id), Some(pos), None) => {
-                        self.buckets.write_tuple_incr(page_id, pos, key, val);
+                        self.buckets.write_record_incr(page_id, pos, key, val);
                         self.nitems += 1;
                     },
                     // case for update
                     (Some(page_id), Some(pos), Some(_old_val)) =>
-                        self.buckets.write_tuple(page_id, pos, key, val),
+                        self.buckets.write_record(page_id, pos, key, val),
                     // new insert, in overflow page
                     (None, None, None) => {
                         println!("allocating new buffer for bucket: {}", bucket_index);

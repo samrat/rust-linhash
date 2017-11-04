@@ -39,9 +39,8 @@ pub struct DbFile {
     pub buffer: Page,
     // which page is currently in `buffer`
     page_id: Option<usize>,
-    pub tuples_per_page: usize,
-    // changes made to `buffer`? (TODO: this flag is not used right
-    // now)
+    pub records_per_page: usize,
+    // changes made to `buffer`?
     dirty: bool,
     bucket_to_page: Vec<usize>,
     free_page: usize,
@@ -62,14 +61,14 @@ impl DbFile {
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let total_size = HEADER_SIZE + keysize + valsize;
-        let tuples_per_page = PAGE_SIZE / total_size;
+        let records_per_page = PAGE_SIZE / total_size;
         DbFile {
             path: String::from(filename),
             file: file,
             ctrl_buffer: Page::new(0, 0),
             buffer: Page::new(keysize, valsize),
             page_id: None,
-            tuples_per_page: tuples_per_page,
+            records_per_page: records_per_page,
             dirty: false,
             free_page: 3,
             bucket_to_page: vec![1, 2],
@@ -125,10 +124,10 @@ impl DbFile {
     }
 
     fn read_header(&mut self) {
-        let num_tuples : usize = deserialize(&self.buffer.storage[0..8]).unwrap();
+        let num_records : usize = deserialize(&self.buffer.storage[0..8]).unwrap();
         let next : usize = deserialize(&self.buffer.storage[8..16]).unwrap();
         let prev : usize = deserialize(&self.buffer.storage[16..24]).unwrap();
-        self.buffer.num_tuples = num_tuples;
+        self.buffer.num_records = num_records;
         self.buffer.next = if next != 0 {
             Some(next)
         } else {
@@ -145,7 +144,7 @@ impl DbFile {
         println!("[write_header] id={:?} {:?} {:?}", self.page_id, self.buffer.next, self.bucket_to_page);
 
         mem_move(&mut self.buffer.storage[0..8],
-                 &serialize(&self.buffer.num_tuples, Bounded(8)).unwrap());
+                 &serialize(&self.buffer.num_records, Bounded(8)).unwrap());
         mem_move(&mut self.buffer.storage[8..16],
                  &serialize(&self.buffer.next.unwrap_or(0), Bounded(10)).unwrap());
         mem_move(&mut self.buffer.storage[16..24],
@@ -174,7 +173,6 @@ impl DbFile {
             Some(p) if p == page_id => (),
             Some(_) | None => {
                 if self.dirty {
-                    println!("writing {} and resetting dirty bit", self.buffer.id);
                     self.write_buffer();
                 }
                 self.dirty = false;
@@ -205,9 +203,9 @@ impl DbFile {
         file.flush().expect("flush failed");
     }
 
-    /// Write tuple but don't increment `num_tuples`. Used when
+    /// Write record but don't increment `num_records`. Used when
     /// updating already existing record.
-    pub fn write_tuple<K, V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
+    pub fn write_record<K, V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
         self.get_page(page_id);
@@ -217,18 +215,18 @@ impl DbFile {
         let val_limit = Bounded(mem::size_of::<V>() as u64);
 
         self.dirty = true;
-        self.buffer.write_tuple(row_num,
+        self.buffer.write_record(row_num,
                                 &serialize(&key, key_limit).unwrap(),
                                 &serialize(&val, val_limit).unwrap());
     }
 
-    /// Write tuple and increment `num_tuples`. Used when inserting
+    /// Write record and increment `num_records`. Used when inserting
     /// new record.
-    pub fn write_tuple_incr<K,V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
+    pub fn write_record_incr<K,V>(&mut self, page_id: usize, row_num: usize, key: K, val: V)
         where K: Serialize,
               V: Serialize {
-        self.buffer.incr_num_tuples();
-        self.write_tuple(page_id, row_num, key, val);
+        self.buffer.incr_num_records();
+        self.write_record(page_id, row_num, key, val);
     }
 
     /// Searches for `key` in `bucket`. A bucket is a linked list of
@@ -238,8 +236,8 @@ impl DbFile {
         where K: DeserializeOwned + Debug + PartialEq,
               V: DeserializeOwned + Debug {
         println!("[get] bucket_id: {}", bucket_id);
-        let all_tuples_in_bucket =
-            self.all_tuples_in_bucket::<K,V>(bucket_id);
+        let all_records_in_bucket =
+            self.all_records_in_bucket::<K,V>(bucket_id);
 
         let mut first_free_row = SearchResult {
             page_id: None,
@@ -247,9 +245,9 @@ impl DbFile {
             val: None,
         };
 
-        for (i, page_tuples) in all_tuples_in_bucket.into_iter() {
-            let len = page_tuples.len();
-            for (row_num, (k,v)) in page_tuples.into_iter().enumerate() {
+        for (i, page_records) in all_records_in_bucket.into_iter() {
+            let len = page_records.len();
+            for (row_num, (k,v)) in page_records.into_iter().enumerate() {
                 if k == key {
                     return SearchResult{
                         page_id: Some(i),
@@ -259,7 +257,7 @@ impl DbFile {
                 }
             }
 
-            if len < self.tuples_per_page {
+            if len < self.records_per_page {
                 first_free_row = SearchResult {
                     page_id: Some(i),
                     row_num: Some(len),
@@ -314,23 +312,23 @@ impl DbFile {
                            &self.buffer.storage);
     }
 
-    /// Returns a vec of (page_id, tuples_in_vec). ie. each inner
-    /// vector represents the tuples in a page in the bucket.
-    fn all_tuples_in_bucket<K, V>(&mut self, bucket_id: usize)
+    /// Returns a vec of (page_id, records_in_vec). ie. each inner
+    /// vector represents the records in a page in the bucket.
+    fn all_records_in_bucket<K, V>(&mut self, bucket_id: usize)
                                   -> Vec<(usize, Vec<(K,V)>)>
         where K: DeserializeOwned + Debug,
               V: DeserializeOwned + Debug {
         self.get_bucket(bucket_id);
         let mut records = Vec::new();
 
-        let mut page_tuples = vec![];
-        for i in 0..self.buffer.num_tuples {
-            let (k, v) = self.buffer.read_tuple(i);
+        let mut page_records = vec![];
+        for i in 0..self.buffer.num_records {
+            let (k, v) = self.buffer.read_record(i);
             println!("k,v = {:?}", (k,v));
             let (dk, dv) : (K, V) = deserialize_kv::<K,V>(&k, &v);
-            page_tuples.push((dk, dv));
+            page_records.push((dk, dv));
         }
-        records.push((self.page_id.unwrap(), page_tuples));
+        records.push((self.page_id.unwrap(), page_records));
 
         while let Some(page_id) = self.buffer.next {
             if page_id == 0 {
@@ -338,14 +336,14 @@ impl DbFile {
             }
 
             self.get_page(page_id);
-            let mut page_tuples = vec![];
-            for i in 0..self.buffer.num_tuples {
-                let (k, v) = self.buffer.read_tuple(i);
+            let mut page_records = vec![];
+            for i in 0..self.buffer.num_records {
+                let (k, v) = self.buffer.read_record(i);
                 let (dk, dv) : (K, V) = deserialize_kv::<K,V>(&k, &v);
 
-                page_tuples.push((dk, dv));
+                page_records.push((dk, dv));
             }
-            records.push((page_id, page_tuples));
+            records.push((page_id, page_records));
         }
 
         records
@@ -375,14 +373,14 @@ impl DbFile {
         let keysize = mem::size_of::<K>();
         let valsize = mem::size_of::<V>();
         let new_page = Page::new(keysize, valsize);
-        let tuples = flatten(self.all_tuples_in_bucket::<K,V>(bucket_id));
+        let records = flatten(self.all_records_in_bucket::<K,V>(bucket_id));
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
         self.dirty = false;
         self.write_buffer();
 
-        tuples
+        records
     }
 
     pub fn allocate_new_bucket<K,V>(&mut self)
@@ -401,11 +399,11 @@ mod tests {
     #[test]
     fn dbfile_tests () {
         // let mut bp = DbFile::new::<i32, String>("/tmp/buff");
-        // bp.write_tuple(0, 14, String::from("samrat"));
-        // bp.write_tuple(1, 12, String::from("foo"));
+        // bp.write_record(0, 14, String::from("samrat"));
+        // bp.write_record(1, 12, String::from("foo"));
         // bp.write_buffer();
-        // let v = bp.read_tuple::<i32, String>(1);
-        // bp.all_tuples_in_page::<i32, String>(1);
+        // let v = bp.read_record::<i32, String>(1);
+        // bp.all_records_in_page::<i32, String>(1);
         // bp.write_page(0, &bp.buffer.storage);
         assert_eq!(1+1,2);
     }
