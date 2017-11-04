@@ -29,8 +29,7 @@ pub struct LinHash<K, V> {
 impl<K, V> LinHash<K, V>
     where K: PartialEq + Hash + Clone + Serialize + DeserializeOwned + Debug,
           V: Clone + DeserializeOwned + Serialize + Debug {
-    /// "load"(utilization of data structure) needed before the
-    /// hashmap needs to grow.
+    /// "load factor" needed before the hashmap needs to grow.
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
