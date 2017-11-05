@@ -175,6 +175,9 @@ impl DbFile {
                     self.write_buffer();
                 }
                 self.dirty = false;
+                // clear out buffer
+                mem::replace(&mut self.buffer.storage, [0; 4096]);
+
                 let offset = (page_id * PAGE_SIZE) as u64;
                 self.file.seek(SeekFrom::Start(offset))
                     .expect("Could not seek to offset");
