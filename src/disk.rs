@@ -146,9 +146,9 @@ impl DbFile {
         mem_move(&mut self.buffer.storage[0..8],
                  &serialize(&self.buffer.num_records, Bounded(8)).unwrap());
         mem_move(&mut self.buffer.storage[8..16],
-                 &serialize(&self.buffer.next.unwrap_or(0), Bounded(10)).unwrap());
+                 &serialize(&self.buffer.next.unwrap_or(0), Bounded(8)).unwrap());
         mem_move(&mut self.buffer.storage[16..24],
-                 &serialize(&self.buffer.next.unwrap_or(0), Bounded(10)).unwrap());
+                 &serialize(&self.buffer.prev.unwrap_or(0), Bounded(8)).unwrap());
     }
 
     pub fn get_ctrl_page(&mut self) {
