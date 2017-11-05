@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::mem;
-use util::mem_move;
+use util::*;
 use std::str;
 
 pub const PAGE_SIZE : usize = 4096; // bytes
@@ -96,7 +96,7 @@ impl Page {
             let (k, v) = self.read_record(i);
             let v_vec = v.to_vec();
             println!("{:?}", str::from_utf8(&k));
-            if k.iter().zip(key).all(|(a,b)| a == b) {
+            if slices_eq(k, key) {
                 return Some(v_vec);
             }
         }

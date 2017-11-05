@@ -1,64 +1,60 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::mem;
-use std::marker::PhantomData;
 use std::fmt::Debug;
 
 // TODO: implement remove
 
-extern crate serde;
-extern crate bincode;
 mod util;
 mod page;
 mod disk;
 
 use page::Page;
 use disk::{DbFile,SearchResult};
-use serde::ser::Serialize;
-use serde::de::DeserializeOwned;
 
 /// Linear Hashtable
-pub struct LinHash<K, V> {
+pub struct LinHash {
     buckets: DbFile,
     nbits: usize,               // no of bits used from hash
     nitems: usize,              // number of items in hashtable
     nbuckets: usize,            // number of buckets
-    phantom: (PhantomData<K>, PhantomData<V>),
+    keysize: usize,             // size of keys
+    valsize: usize,             // size of vals
 }
 
-impl<K, V> LinHash<K, V>
-    where K: PartialEq + Hash + Clone + Serialize + DeserializeOwned + Debug,
-          V: Clone + DeserializeOwned + Serialize + Debug {
+impl LinHash {
     /// "load factor" needed before the hashmap needs to grow.
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
-    pub fn new(filename: &str) -> LinHash<K, V> {
+    pub fn new(filename: &str, keysize: usize, valsize: usize) -> LinHash {
         let nbits = 1;
         let nitems = 0;
         let nbuckets = 2;
         LinHash {
-            buckets: DbFile::new::<K,V>(filename),
+            buckets: DbFile::new(filename, keysize, valsize),
             nbits: nbits,
             nitems: nitems,
             nbuckets: nbuckets,
-            phantom: (PhantomData, PhantomData),
+            keysize: keysize,
+            valsize: valsize,
         }
     }
 
-    pub fn open(filename: &str) -> LinHash<K, V> {
-        let mut dbfile = DbFile::new::<K,V>(filename);
+    pub fn open(filename: &str, keysize: usize, valsize: usize) -> LinHash {
+        let mut dbfile = DbFile::new(filename, keysize, valsize);
         let (nbits, nitems, nbuckets) = dbfile.read_ctrlpage();
         LinHash {
             buckets: dbfile,
             nbits: nbits,
             nitems: nitems,
             nbuckets: nbuckets,
-            phantom: (PhantomData, PhantomData),
+            keysize: keysize,
+            valsize: valsize,
         }
     }
 
-    fn hash(&self, key: &K) -> u64 {
+    fn hash(&self, key: &[u8]) -> u64 {
         let mut s = DefaultHasher::new();
         key.hash(&mut s);
         s.finish()
@@ -68,7 +64,7 @@ impl<K, V> LinHash<K, V>
     /// bucket does not yet exist, it is guaranteed that the MSB is a
     /// `1`. To find the bucket, the pair should be placed in,
     /// subtract this `1`.
-    fn bucket(&self, key: &K) -> usize {
+    fn bucket(&self, key: &[u8]) -> usize {
         let hash = self.hash(key);
         let bucket = (hash & ((1 << self.nbits) - 1)) as usize;
         let adjusted_bucket_index =
@@ -84,7 +80,7 @@ impl<K, V> LinHash<K, V>
     /// Returns true if the `load` exceeds `LinHash::THRESHOLD`
     fn split_needed(&self) -> bool {
         (self.nitems as f32 / (self.buckets.records_per_page * self.nbuckets) as f32) >
-            LinHash::<K,V>::THRESHOLD
+            LinHash::THRESHOLD
     }
 
     /// If necessary, allocates new bucket. If there's no more space
@@ -97,7 +93,7 @@ impl<K, V> LinHash<K, V>
         if self.split_needed() {
             self.nbuckets += 1;
 
-            self.buckets.allocate_new_bucket::<K,V>();
+            self.buckets.allocate_new_bucket();
             if self.nbuckets > (1 << self.nbits) {
                 self.nbits += 1;
             }
@@ -110,19 +106,16 @@ impl<K, V> LinHash<K, V>
             println!("nbits: {} nitems: {} nbuckets: {} splitting {}",
                      self.nbits, self.nitems, self.nbuckets, bucket_to_split);
 
-            let key_size = mem::size_of::<K>();
-            let val_size = mem::size_of::<V>();
-
             // Replace the bucket to split with a fresh, empty
             // page. And get a list of all records stored in the bucket
             let old_bucket_records =
-                self.buckets.clear_bucket::<K,V>(bucket_to_split);
+                self.buckets.clear_bucket(bucket_to_split);
 
             println!("{:?}", old_bucket_records);
             // Re-hash all records in old_bucket. Ideally, about half
             // of the records will go into the new bucket.
             for &(ref k, ref v) in old_bucket_records.iter() {
-                self.reinsert(k.clone(), v.clone());
+                self.reinsert(k, v);
             }
 
             return true
@@ -132,7 +125,7 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Does the hashmap contain a record with key `key`?
-    pub fn contains(&mut self, key: K) -> bool {
+    pub fn contains(&mut self, key: &[u8]) -> bool {
         match self.get(key) {
             Some(_) => true,
             None => false,
@@ -140,9 +133,9 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Update the mapping of record with key `key`.
-    pub fn update(&mut self, key: K, val: V) -> bool {
+    pub fn update(&mut self, key: &[u8], val: &[u8]) -> bool {
         let bucket_index = self.bucket(&key);
-        match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
+        match self.buckets.search_bucket(bucket_index, key.clone()) {
             SearchResult { page_id, row_num, val: old_val } => {
                 match (page_id, row_num, old_val) {
                     (Some(page_id), Some(row_num), Some(_)) => {
@@ -158,10 +151,10 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Insert (key,value) pair into the hashtable.
-    pub fn put(&mut self, key: K, val: V) {
+    pub fn put(&mut self, key: &[u8], val: &[u8]) {
         println!("[put] {:?}", (key.clone(), val.clone()));
         let bucket_index = self.bucket(&key);
-        match self.buckets.search_bucket::<K,V>(bucket_index, key.clone()) {
+        match self.buckets.search_bucket(bucket_index, key.clone()) {
             SearchResult { page_id, row_num, val: old_val } => {
                 println!("{:?}", (page_id, row_num, old_val.clone()));
                 match (page_id, row_num, old_val) {
@@ -177,7 +170,7 @@ impl<K, V> LinHash<K, V>
                     (None, None, None) => {
                         println!("allocating new buffer for bucket: {}", bucket_index);
                         // overflow
-                        let overflow_index = self.buckets.allocate_overflow::<K,V>(bucket_index);
+                        let overflow_index = self.buckets.allocate_overflow(bucket_index);
                         self.buckets.put(overflow_index, key, val);
                         self.nitems += 1;
                     },
@@ -190,7 +183,7 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Re-insert (key, value) pair after a split
-    fn reinsert(&mut self, key: K, val: V) {
+    fn reinsert(&mut self, key: &[u8], val: &[u8]) {
         let bucket_index = self.bucket(&key);
         self.buckets.put(bucket_index, key, val);
 
@@ -198,10 +191,15 @@ impl<K, V> LinHash<K, V>
     }
 
     /// Lookup `key` in hashtable
-    pub fn get(&mut self, key: K) -> Option<V> {
+    pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
         let bucket_index = self.bucket(&key);
-        match self.buckets.search_bucket::<K,V>(bucket_index, key) {
-            SearchResult { page_id, row_num, val } => val,
+        match self.buckets.search_bucket(bucket_index, key) {
+            SearchResult { page_id, row_num, val } => {
+                match val {
+                    Some(v) => Some(v),
+                    _ => None,
+                }
+            },
             _ => None,
         }
     }
@@ -217,6 +215,11 @@ impl<K, V> LinHash<K, V>
     //         None => None,
     //     }
     // }
+
+    pub fn close(&mut self) {
+        self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
+        self.buckets.close();
+    }
 }
 
 #[cfg(test)]
@@ -226,38 +229,41 @@ mod tests {
 
     #[test]
     fn all_ops() {
-        let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_all_ops");
-        h.put(String::from("hello"), 12);
-        h.put(String::from("there"), 13);
-        h.put(String::from("foo"), 42);
-        h.put(String::from("bar"), 11);
-        h.put(String::from("bar"), 22);
-        h.update(String::from("foo"), 84);
+        let mut h = LinHash::new("/tmp/test_all_ops", 32, 4);
+        h.put("hello".as_bytes(), &[12]);
+        h.put("there".as_bytes(), &[13]);
+        h.put("foo".as_bytes(), &[42]);
+        h.put("bar".as_bytes(), &[11]);
+        h.put("bar".as_bytes(), &[22]);
+        h.update("foo".as_bytes(), &[84]);
 
-        assert_eq!(h.get(String::from("hello")), Some(12));
-        assert_eq!(h.get(String::from("there")), Some(13));
-        assert_eq!(h.get(String::from("foo")), Some(84));
-        assert_eq!(h.get(String::from("bar")), Some(22));
+        assert_eq!(h.get("hello".as_bytes()), Some(vec![12, 0, 0, 0]));
+        assert_eq!(h.get("there".as_bytes()), Some(vec![13, 0, 0, 0]));
+        assert_eq!(h.get("foo".as_bytes()), Some(vec![84, 0, 0, 0]));
+        assert_eq!(h.get("bar".as_bytes()), Some(vec![22, 0, 0, 0]));
 
         // assert_eq!(h.update(String::from("doesn't exist"), 99), false);
-        assert_eq!(h.contains(String::from("doesn't exist")), false);
-        assert_eq!(h.contains(String::from("hello")), true);
+        assert_eq!(h.contains("doesn't exist".as_bytes()), false);
+        assert_eq!(h.contains("hello".as_bytes()), true);
 
+        h.close();
         fs::remove_file("/tmp/test_all_ops");
     }
 
     #[test]
     fn test_persistence() {
-        let mut h : LinHash<String, i32> = LinHash::new("/tmp/test_persistence");
-        h.put(String::from("hello"), 12);
-        h.put(String::from("world"), 13);
-        h.put(String::from("linear"), 144);
-        h.put(String::from("hashing"), 999);
+        let mut h = LinHash::new("/tmp/test_persistence", 32, 4);
+        h.put("hello".as_bytes(), &[12]);
+        h.put("world".as_bytes(), &[13]);
+        h.put("linear".as_bytes(), &[144]);
+        h.put("hashing".as_bytes(), &[255]);
+        h.close();
 
         // This reloads the file and creates a new hashtable
-        let mut h2 : LinHash<String, i32> = LinHash::open("/tmp/test_persistence");
-        assert_eq!(h2.get(String::from("hello")), Some(12));
+        let mut h2 = LinHash::open("/tmp/test_persistence", 32, 4);
+        assert_eq!(h2.get("hello".as_bytes()), Some(vec![12, 0, 0, 0]));
 
+        h2.close();
         fs::remove_file("/tmp/test_persistence");
     }
 }
