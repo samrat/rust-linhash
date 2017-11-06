@@ -15,44 +15,43 @@ pub struct Page {
     // prev bucket in linked list(of overflow buckets)
     pub prev: Option<usize>,
 
-    key_size: usize,
-    val_size: usize,
+    keysize: usize,
+    valsize: usize,
 }
 
+// Row layout:
+// | key | val |
 #[derive(Debug)]
 struct RowOffsets {
-    header_offset: usize,
     key_offset: usize,
     val_offset: usize,
     row_end: usize,
 }
 
 impl Page {
-    pub fn new(key_size: usize, val_size: usize) -> Page {
+    pub fn new(keysize: usize, valsize: usize) -> Page {
         Page {
             id: 0,
             num_records: 0,
             storage: [0; PAGE_SIZE],
             next: None,
             prev: None,
-            key_size: key_size,
-            val_size: val_size,
+            keysize: keysize,
+            valsize: valsize,
         }
     }
 
     /// Compute where in the page the row should be placed. Within the
     /// row, calculate the offsets of the header, key and value.
     fn compute_offsets(&self, row_num: usize) -> RowOffsets {
-        let total_size = HEADER_SIZE + self.key_size + self.val_size;
+        let total_size = self.keysize + self.valsize;
 
-        let row_offset = row_num * total_size;
-        let header_offset = row_offset;
-        let key_offset = header_offset + HEADER_SIZE;
-        let val_offset = key_offset + self.key_size;
-        let row_end = val_offset + self.val_size;
+        let row_offset = HEADER_SIZE + (row_num * total_size);
+        let key_offset = row_offset;
+        let val_offset = key_offset + self.keysize;
+        let row_end = val_offset + self.valsize;
 
         RowOffsets {
-            header_offset: header_offset,
             key_offset: key_offset,
             val_offset: val_offset,
             row_end: row_end,
