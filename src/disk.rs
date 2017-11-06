@@ -422,13 +422,10 @@ mod tests {
 
     #[test]
     fn dbfile_tests () {
-        // let mut bp = DbFile::new::<i32, String>("/tmp/buff");
-        // bp.write_record(0, 14, String::from("samrat"));
-        // bp.write_record(1, 12, String::from("foo"));
-        // bp.write_buffer();
-        // let v = bp.read_record::<i32, String>(1);
-        // bp.all_records_in_page::<i32, String>(1);
-        // bp.write_page(0, &bp.buffer.storage);
-        assert_eq!(1+1,2);
+        let mut bp = DbFile::new("/tmp/buff", 4, 4);
+        let bark = "bark".as_bytes();
+        let krab = "krab".as_bytes();
+        bp.write_record(0, 14, bark, krab);
+        assert_eq!(bp.buffer.read_record(14), (bark, krab));
     }
 }
