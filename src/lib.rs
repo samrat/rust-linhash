@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::fmt::Debug;
+use std::path::Path;
 
 // TODO: implement remove
 
@@ -27,23 +28,16 @@ impl LinHash {
     const THRESHOLD: f32 = 0.8;
 
     /// Creates a new Linear Hashtable.
-    pub fn new(filename: &str, keysize: usize, valsize: usize) -> LinHash {
-        let nbits = 1;
-        let nitems = 0;
-        let nbuckets = 2;
-        LinHash {
-            buckets: DbFile::new(filename, keysize, valsize),
-            nbits: nbits,
-            nitems: nitems,
-            nbuckets: nbuckets,
-            keysize: keysize,
-            valsize: valsize,
-        }
-    }
-
     pub fn open(filename: &str, keysize: usize, valsize: usize) -> LinHash {
-        let mut dbfile = DbFile::new(filename, keysize, valsize);
-        let (nbits, nitems, nbuckets) = dbfile.read_ctrlpage();
+        let file_exists = Path::new(filename).exists();
+        let mut dbfile = DbFile::new(filename, keysize, valsize);;
+        let (nbits, nitems, nbuckets) =
+            if file_exists {
+                dbfile.read_ctrlpage()
+            } else {
+                (1, 0, 2)
+            };
+        println!("{:?}", (nbits, nitems, nbuckets));
         LinHash {
             buckets: dbfile,
             nbits: nbits,
@@ -229,7 +223,7 @@ mod tests {
 
     #[test]
     fn all_ops() {
-        let mut h = LinHash::new("/tmp/test_all_ops", 32, 4);
+        let mut h = LinHash::open("/tmp/test_all_ops", 32, 4);
         h.put("hello".as_bytes(), &[12]);
         h.put("there".as_bytes(), &[13]);
         h.put("foo".as_bytes(), &[42]);
@@ -252,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_persistence() {
-        let mut h = LinHash::new("/tmp/test_persistence", 32, 4);
+        let mut h = LinHash::open("/tmp/test_persistence", 32, 4);
         h.put("hello".as_bytes(), &[12]);
         h.put("world".as_bytes(), &[13]);
         h.put("linear".as_bytes(), &[144]);

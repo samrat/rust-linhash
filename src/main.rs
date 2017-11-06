@@ -35,7 +35,7 @@ use std::time::Instant;
 // }
 
 fn main() {
-    let mut h = LinHash::new("/tmp/main_tests", 32, 4);
+    let mut h = LinHash::open("/tmp/main_tests", 32, 4);
     h.put("hello".as_bytes(), &[12]);
     h.put("there".as_bytes(), &[13]);
     h.put("foo".as_bytes(), &[14]);
