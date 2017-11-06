@@ -135,19 +135,9 @@ impl DbFile {
     }
 
     fn write_header(&mut self) {
-        println!("[write_header] id={:?} {:?} {:?}", self.page_id, self.buffer.next, self.bucket_to_page);
-
-        // let mut num_records_bytes = vec![];
-        // num_records_bytes.write(self.buffer.num_records);
-        // let mut next_bytes = vec![];
-        // next_bytes.write(&self.buffer.next);
-        // let mut prev_bytes = vec![];
-        // prev_bytes.write(&self.buffer.prev.unwrap_or(0));
-
         mem_move(&mut self.buffer.storage[0..8], &usize_to_bytearray(self.buffer.num_records));
         mem_move(&mut self.buffer.storage[8..16], &usize_to_bytearray(self.buffer.next.unwrap_or(0)));
         mem_move(&mut self.buffer.storage[16..24], &usize_to_bytearray(self.buffer.prev.unwrap_or(0)));
-
     }
 
     pub fn get_ctrl_page(&mut self) {
@@ -183,16 +173,12 @@ impl DbFile {
                     .expect("Could not seek to offset");
                 self.file.read(&mut self.buffer.storage)
                     .expect("Could not read file");
+
                 self.page_id = Some(page_id);
                 self.buffer.id = page_id;
                 self.read_header();
             },
         }
-    }
-
-    fn write_bucket(&mut self, mut file: &File, bucket_id: usize, data: &[u8]) {
-        let page_id = self.bucket_to_page(bucket_id);
-        DbFile::write_page(&self.file, page_id, data);
     }
 
     /// Writes data in `data` into page `page_id`
