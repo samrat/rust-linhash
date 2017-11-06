@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::mem::transmute;
+use std::mem::{transmute,size_of};
 
 pub fn mem_move(dest: &mut [u8], src: &[u8]) {
     for (d, s) in dest.iter_mut().zip(src) {
@@ -10,6 +10,12 @@ pub fn mem_move(dest: &mut [u8], src: &[u8]) {
 pub fn usize_to_bytearray(n: usize) -> [u8; 8] {
     unsafe {
         transmute::<usize, [u8;8]>(n)
+    }
+}
+
+pub fn i32_to_bytearray(n: i32) -> [u8; 4] {
+    unsafe {
+        transmute::<i32, [u8;4]>(n)
     }
 }
 

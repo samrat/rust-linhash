@@ -30,7 +30,7 @@ impl LinHash {
     /// Creates a new Linear Hashtable.
     pub fn open(filename: &str, keysize: usize, valsize: usize) -> LinHash {
         let file_exists = Path::new(filename).exists();
-        let mut dbfile = DbFile::new(filename, keysize, valsize);;
+        let mut dbfile = DbFile::new(filename, keysize, valsize);
         let (nbits, nitems, nbuckets) =
             if file_exists {
                 dbfile.read_ctrlpage()
@@ -97,21 +97,19 @@ impl LinHash {
             // is added, bucket 01 needs to be split
             let bucket_to_split =
                 (self.nbuckets-1) ^ (1 << (self.nbits-1));
-            println!("nbits: {} nitems: {} nbuckets: {} splitting {}",
-                     self.nbits, self.nitems, self.nbuckets, bucket_to_split);
-
+            println!("nbits: {} nitems: {} nbuckets: {} splitting {} and {}",
+                     self.nbits, self.nitems, self.nbuckets, bucket_to_split, (self.nbuckets-1));
             // Replace the bucket to split with a fresh, empty
             // page. And get a list of all records stored in the bucket
             let old_bucket_records =
                 self.buckets.clear_bucket(bucket_to_split);
 
-            println!("{:?}", old_bucket_records);
             // Re-hash all records in old_bucket. Ideally, about half
             // of the records will go into the new bucket.
-            for &(ref k, ref v) in old_bucket_records.iter() {
-                self.reinsert(k, v);
+            for (k, v) in old_bucket_records.into_iter() {
+                let bucket_index = self.bucket(&k);
+                self.reinsert(&k, &v);
             }
-
             return true
         }
 
@@ -150,7 +148,7 @@ impl LinHash {
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket(bucket_index, key.clone()) {
             SearchResult { page_id, row_num, val: old_val } => {
-                println!("{:?}", (page_id, row_num, old_val.clone()));
+                println!("[put] {:?} {:?}", key, (page_id, row_num, old_val.clone()));
                 match (page_id, row_num, old_val) {
                     // new insert
                     (Some(page_id), Some(pos), None) => {
@@ -158,21 +156,24 @@ impl LinHash {
                         self.nitems += 1;
                     },
                     // case for update
-                    (Some(page_id), Some(pos), Some(_old_val)) =>
-                        self.buckets.write_record(page_id, pos, key, val),
+                    (Some(page_id), Some(pos), Some(_old_val)) => {
+                        panic!("can't use put to reinsert old item: {:?}", (key, val));
+                        // self.buckets.write_record(page_id, pos, key, val)
+                    },
                     // new insert, in overflow page
-                    (None, None, None) => {
+                    (Some(last_page_id), None, None) => {
                         println!("allocating new buffer for bucket: {}", bucket_index);
                         // overflow
-                        let overflow_index = self.buckets.allocate_overflow(bucket_index);
-                        self.buckets.put(overflow_index, key, val);
-                        self.nitems += 1;
+                        let (overflow_page_id, pos) =
+                            self.buckets.allocate_overflow(bucket_index, last_page_id);
+                        self.buckets.write_record_incr(overflow_page_id, pos, key, val);
                     },
                     _ => panic!("impossible case"),
                 }
             },
         }
-        // self.maybe_split();
+
+        self.maybe_split();
         self.buckets.write_ctrlpage((self.nbits, self.nitems, self.nbuckets));
     }
 
@@ -180,8 +181,7 @@ impl LinHash {
     fn reinsert(&mut self, key: &[u8], val: &[u8]) {
         let bucket_index = self.bucket(&key);
         self.buckets.put(bucket_index, key, val);
-
-        // self.maybe_split();
+        self.nitems -= 1;
     }
 
     /// Lookup `key` in hashtable

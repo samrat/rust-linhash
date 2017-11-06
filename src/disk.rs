@@ -213,9 +213,17 @@ impl DbFile {
     }
 
     /// Searches for `key` in `bucket`. A bucket is a linked list of
-    /// pages.
+    /// pages. Return value:
+    ///
+    /// If key is present in bucket returns as struct, SearchResult
+    /// (page_id, row_num, val).
+    ///
+    /// If key is not present and:
+    ///   1. there is enough space in last page, returns (page_id, row_num, None)
+    ///
+    ///   2. there is not enough space in last page, returns
+    ///      (last_page_id, None, None)
     pub fn search_bucket(&mut self, bucket_id: usize, key: &[u8]) -> SearchResult {
-        println!("[get] bucket_id: {}", bucket_id);
         let all_records_in_bucket =
             self.all_records_in_bucket(bucket_id);
 
@@ -237,12 +245,15 @@ impl DbFile {
                 }
             }
 
-            if len < self.records_per_page {
-                first_free_row = SearchResult {
-                    page_id: Some(i),
-                    row_num: Some(len),
-                    val: None,
-                }
+            let row_num = if len < self.records_per_page {
+                Some(len)
+            } else {
+                None
+            };
+            first_free_row = SearchResult {
+                page_id: Some(i),
+                row_num: row_num,
+                val: None,
             }
         }
 
@@ -250,26 +261,24 @@ impl DbFile {
     }
 
     /// Add a new overflow page to a `bucket`.
-    pub fn allocate_overflow(&mut self, bucket_id: usize) -> usize {
-        // Write next of old page
-        self.buffer.next = Some(self.free_page);
-        self.write_buffer();
-
+    pub fn allocate_overflow(&mut self, bucket_id: usize,
+                             last_page_id: usize) -> (usize, usize) {
         let physical_index = self.allocate_new_page();
-        self.bucket_to_page.push(physical_index);
-        println!("{}'s next: physical_index: {}", self.buffer.id, physical_index);
-
         self.get_page(physical_index);
-        self.buffer.prev = Some(self.bucket_to_page(bucket_id));
+        self.buffer.prev = Some(last_page_id);
         self.write_buffer();
 
+        // Write next of old page
+        self.get_page(last_page_id);
+        self.buffer.next = Some(physical_index);
+        self.write_buffer();
+        println!("setting next of buffer_id {}(page_id: {}) to {:?}", bucket_id, last_page_id, self.buffer.next);
 
-        // virtual address
-        physical_index - 1
+        (physical_index, 0)
     }
 
     pub fn put(&mut self, bucket_id: usize, key: &[u8], val: &[u8]) {
-        println!("[put] bucket_id: {}", bucket_id);
+        println!("[put] key: {:?}, bucket_id: {}", key, bucket_id);
         self.get_bucket(bucket_id);
         self.dirty = true;
         self.buffer.put(key, val);
@@ -300,6 +309,8 @@ impl DbFile {
         records.push((self.page_id.unwrap(), page_records));
 
         while let Some(page_id) = self.buffer.next {
+            println!("[all_records_in_bucket] bucket_id: {} page_id: {}",
+                     bucket_id, page_id);
             if page_id == 0 {
                 break;
             }
@@ -322,6 +333,10 @@ impl DbFile {
     fn allocate_new_page(&mut self) -> usize {
         let page_id = self.free_page;
         let new_page = Page::new(self.keysize, self.valsize);
+
+        // we're about to bring in new page, so write existing one
+        self.write_buffer();
+
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
@@ -337,6 +352,7 @@ impl DbFile {
         let page_id = self.bucket_to_page(bucket_id);
         let new_page = Page::new(self.keysize, self.valsize);
         let records = flatten(self.all_records_in_bucket(bucket_id));
+
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
