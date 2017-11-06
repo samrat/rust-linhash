@@ -40,6 +40,9 @@ pub struct DbFile {
     free_page: usize,
     keysize: usize,
     valsize: usize,
+    // overflow pages no longer in use
+    free_list: Option<usize>,
+    num_free: usize,
 }
 
 impl DbFile {
@@ -68,6 +71,8 @@ impl DbFile {
             bucket_to_page: vec![1, 2],
             keysize: keysize,
             valsize: valsize,
+            free_list: None,
+            num_free: 0,
         }
     }
 
@@ -329,13 +334,23 @@ impl DbFile {
         records
     }
 
-    /// Allocate a new page.
+    /// Allocate a new page. If available uses recycled overflow
+    /// pages.
     fn allocate_new_page(&mut self) -> usize {
-        let page_id = self.free_page;
-        let new_page = Page::new(self.keysize, self.valsize);
-
         // we're about to bring in new page, so write existing one
         self.write_buffer();
+
+        let page_id = if self.num_free == 0 {
+            self.free_page
+        } else {
+            let p = self.free_list;
+            self.get_page(p.unwrap());
+            self.free_list = self.buffer.next;
+            self.num_free -= 1;
+            p.unwrap()
+        };
+
+        let new_page = Page::new(self.keysize, self.valsize);
 
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
@@ -347,12 +362,26 @@ impl DbFile {
         page_id
     }
 
-    // NOTE: Old pages are not reclaimed at the moment
+    /// Empties out root page for bucket. Overflow pages are added to
+    /// `free_list`
     pub fn clear_bucket(&mut self, bucket_id: usize) -> Vec<(Vec<u8>,Vec<u8>)> {
+        let mut all_records = self.all_records_in_bucket(bucket_id);
+        let records = flatten(all_records.clone());
+
+        let bucket_len = all_records.len();
+        // Add overflow pages to free_list
+        if bucket_len > 1 {
+            let (last_page_id, _) = all_records.pop().unwrap();
+            let temp = self.free_list;
+            self.free_list = Some(last_page_id);
+            self.get_page(last_page_id);
+            // overflow pages only
+            self.num_free += bucket_len - 1;
+            self.buffer.next = temp;
+        }
+
         let page_id = self.bucket_to_page(bucket_id);
         let new_page = Page::new(self.keysize, self.valsize);
-        let records = flatten(self.all_records_in_bucket(bucket_id));
-
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);

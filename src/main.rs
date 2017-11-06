@@ -15,10 +15,10 @@ fn measure_perf(num_iters: i32) {
     // in each iteration, insert a larger number of records to see how
     // `insert` and `lookup` performs. `insert` should be O(n) and
     // `lookup` should be O(1).
-    for i in 1..2 {
+    for i in 1..num_iters {
         let now = Instant::now();
         let mut h2 = LinHash::open("/tmp/measure_perf", 4, 4);
-        for k in 0..(1000*i) {
+        for k in 0..(10000*i) {
             h2.put(&util::i32_to_bytearray(k),
                    &util::i32_to_bytearray(k+1));
         }
