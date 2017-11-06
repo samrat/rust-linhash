@@ -54,8 +54,8 @@ impl DbFile {
             Err(e) => panic!(e),
         };
 
-        let total_size = HEADER_SIZE + keysize + valsize;
-        let records_per_page = PAGE_SIZE / total_size;
+        let total_size = keysize + valsize;
+        let records_per_page = (PAGE_SIZE - HEADER_SIZE) / total_size;
         DbFile {
             path: String::from(filename),
             file: file,
