@@ -88,6 +88,15 @@ impl DbFile {
 
         self.free_page =
             bytearray_to_usize(self.ctrl_buffer.storage[24..32].to_vec());
+        let free_list_head = bytearray_to_usize(self.ctrl_buffer.storage[32..40].to_vec());
+        self.free_list =
+            if free_list_head == 0 {
+                None
+            } else {
+                Some(free_list_head)
+            };
+        self.num_free =
+            bytearray_to_usize(self.ctrl_buffer.storage[40..48].to_vec());
         self.bucket_to_page =
             bytevec_to_usize_vec(self.ctrl_buffer.storage[32..PAGE_SIZE].to_vec());
         (nbits, nitems, nbuckets)
@@ -102,6 +111,8 @@ impl DbFile {
         let nitems_bytes = usize_to_bytearray(nitems);
         let nbuckets_bytes = usize_to_bytearray(nbuckets);
         let free_page_bytes = usize_to_bytearray(self.free_page);
+        let free_list_bytes = usize_to_bytearray(self.free_list.unwrap_or(0));
+        let num_free_bytes = usize_to_bytearray(self.num_free);
         let bucket_to_page_bytevec = usize_vec_to_bytevec(self.bucket_to_page.clone());
         let mut bucket_to_page_bytearray = vec![];
         bucket_to_page_bytearray.write(&bucket_to_page_bytevec);
@@ -115,6 +126,10 @@ impl DbFile {
                  &nbuckets_bytes);
         mem_move(&mut self.ctrl_buffer.storage[24..32],
                  &free_page_bytes);
+        mem_move(&mut self.ctrl_buffer.storage[32..40],
+                 &free_list_bytes);
+        mem_move(&mut self.ctrl_buffer.storage[40..48],
+                 &num_free_bytes);
         mem_move(&mut self.ctrl_buffer.storage[32..PAGE_SIZE],
                  &bucket_to_page_bytearray);
         DbFile::write_page(&mut self.file,
