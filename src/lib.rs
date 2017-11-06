@@ -158,7 +158,6 @@ impl LinHash {
                     // case for update
                     (Some(page_id), Some(pos), Some(_old_val)) => {
                         panic!("can't use put to reinsert old item: {:?}", (key, val));
-                        // self.buckets.write_record(page_id, pos, key, val)
                     },
                     // new insert, in overflow page
                     (Some(last_page_id), None, None) => {
@@ -179,8 +178,8 @@ impl LinHash {
 
     /// Re-insert (key, value) pair after a split
     fn reinsert(&mut self, key: &[u8], val: &[u8]) {
-        let bucket_index = self.bucket(&key);
-        self.buckets.put(bucket_index, key, val);
+        self.put(key, val);
+        // correct for nitems increment in `put`
         self.nitems -= 1;
     }
 
@@ -228,7 +227,7 @@ mod tests {
         h.put("there".as_bytes(), &[13]);
         h.put("foo".as_bytes(), &[42]);
         h.put("bar".as_bytes(), &[11]);
-        h.put("bar".as_bytes(), &[22]);
+        h.update("bar".as_bytes(), &[22]);
         h.update("foo".as_bytes(), &[84]);
 
         assert_eq!(h.get("hello".as_bytes()), Some(vec![12, 0, 0, 0]));
