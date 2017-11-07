@@ -208,6 +208,7 @@ impl DbFile {
         let offset = (page_id * PAGE_SIZE) as u64;
         file.seek(SeekFrom::Start(offset))
             .expect("Could not seek to offset");
+        file.write(data).expect("write failed");
         file.flush().expect("flush failed");
     }
 
