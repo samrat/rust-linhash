@@ -6,9 +6,9 @@ use std::path::Path;
 
 // TODO: implement remove
 
-mod util;
-mod page;
-mod disk;
+pub mod util;
+pub mod page;
+pub mod disk;
 
 use page::Page;
 use disk::{DbFile,SearchResult};

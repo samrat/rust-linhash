@@ -117,7 +117,9 @@ impl DbFile {
         let num_free_bytes = usize_to_bytearray(self.num_free);
         let bucket_to_page_bytevec = usize_vec_to_bytevec(self.bucket_to_page.clone());
         let mut bucket_to_page_bytearray = vec![];
-        bucket_to_page_bytearray.write(&bucket_to_page_bytevec);
+        bucket_to_page_bytearray.write(&bucket_to_page_bytevec)
+            .expect("Write to ctrlpage failed");
+
         println!("nbits: {:?} nitems: {:?} nbuckets: {:?}", nbits_bytes,
                  nitems_bytes, nbuckets_bytes);
         mem_move(&mut self.ctrl_buffer.storage[0..8],

@@ -1,14 +1,9 @@
 extern crate linhash;
 
-mod disk;
-mod page;
-mod util;
-use disk::DbFile;
-
 use linhash::LinHash;
 use std::time::Instant;
 use std::fs;
-use util::*;
+use linhash::util::*;
 
 #[allow(dead_code)]
 fn measure_perf(num_iters: i32) {
@@ -19,14 +14,14 @@ fn measure_perf(num_iters: i32) {
         let now = Instant::now();
         let mut h2 = LinHash::open("/tmp/measure_perf", 4, 4);
         for k in 0..(10000*i) {
-            h2.put(&util::i32_to_bytearray(k),
-                   &util::i32_to_bytearray(k+1));
+            h2.put(&linhash::util::i32_to_bytearray(k),
+                   &linhash::util::i32_to_bytearray(k+1));
         }
 
         let time_get = Instant::now();
         for k in 1000..9000 {
-            assert_eq!(h2.get(&util::i32_to_bytearray(k)),
-                       Some(util::i32_to_bytearray(k+1).to_vec()));
+            assert_eq!(h2.get(&linhash::util::i32_to_bytearray(k)),
+                       Some(linhash::util::i32_to_bytearray(k+1).to_vec()));
             println!("{}", k);
         }
         let time_get_done = Instant::now();
