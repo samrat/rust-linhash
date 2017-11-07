@@ -98,7 +98,7 @@ impl DbFile {
         self.num_free =
             bytearray_to_usize(self.ctrl_buffer.storage[40..48].to_vec());
         self.bucket_to_page =
-            bytevec_to_usize_vec(self.ctrl_buffer.storage[32..PAGE_SIZE].to_vec());
+            bytevec_to_usize_vec(self.ctrl_buffer.storage[48..PAGE_SIZE].to_vec());
         (nbits, nitems, nbuckets)
     }
 
@@ -130,7 +130,7 @@ impl DbFile {
                  &free_list_bytes);
         mem_move(&mut self.ctrl_buffer.storage[40..48],
                  &num_free_bytes);
-        mem_move(&mut self.ctrl_buffer.storage[32..PAGE_SIZE],
+        mem_move(&mut self.ctrl_buffer.storage[48..PAGE_SIZE],
                  &bucket_to_page_bytearray);
         DbFile::write_page(&mut self.file,
                            0,
