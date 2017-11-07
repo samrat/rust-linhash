@@ -37,9 +37,9 @@ pub struct DbFile {
     // changes made to `buffer`?
     dirty: bool,
     bucket_to_page: Vec<usize>,
-    free_page: usize,
     keysize: usize,
     valsize: usize,
+    num_pages: usize,
     // overflow pages no longer in use
     free_list: Option<usize>,
     num_free: usize,
@@ -67,17 +67,19 @@ impl DbFile {
             page_id: None,
             records_per_page: records_per_page,
             dirty: false,
-            free_page: 3,
             bucket_to_page: vec![1, 2],
             keysize: keysize,
             valsize: valsize,
-            free_list: None,
+            num_pages: 3,
+            free_list: Some(3),
             num_free: 0,
         }
     }
 
     // Control page layout:
-    // | nbits | nitems | nbuckets | bucket_to_page mapping ....
+    //
+    // | nbits | nitems | nbuckets | num_pages | free_list root |
+    // num_free | bucket_to_page mapping .... |
     pub fn read_ctrlpage(&mut self) -> (usize, usize, usize) {
         self.get_ctrl_page();
         let nbits : usize = bytearray_to_usize(self.ctrl_buffer.storage[0..8].to_vec());
@@ -86,7 +88,7 @@ impl DbFile {
         let nbuckets : usize =
             bytearray_to_usize(self.ctrl_buffer.storage[16..24].to_vec());
 
-        self.free_page =
+        self.num_pages =
             bytearray_to_usize(self.ctrl_buffer.storage[24..32].to_vec());
         let free_list_head = bytearray_to_usize(self.ctrl_buffer.storage[32..40].to_vec());
         self.free_list =
@@ -110,7 +112,7 @@ impl DbFile {
         let nbits_bytes = usize_to_bytearray(nbits);
         let nitems_bytes = usize_to_bytearray(nitems);
         let nbuckets_bytes = usize_to_bytearray(nbuckets);
-        let free_page_bytes = usize_to_bytearray(self.free_page);
+        let num_pages_bytes = usize_to_bytearray(self.num_pages);
         let free_list_bytes = usize_to_bytearray(self.free_list.unwrap_or(0));
         let num_free_bytes = usize_to_bytearray(self.num_free);
         let bucket_to_page_bytevec = usize_vec_to_bytevec(self.bucket_to_page.clone());
@@ -125,7 +127,7 @@ impl DbFile {
         mem_move(&mut self.ctrl_buffer.storage[16..24],
                  &nbuckets_bytes);
         mem_move(&mut self.ctrl_buffer.storage[24..32],
-                 &free_page_bytes);
+                 &num_pages_bytes);
         mem_move(&mut self.ctrl_buffer.storage[32..40],
                  &free_list_bytes);
         mem_move(&mut self.ctrl_buffer.storage[40..48],
@@ -206,8 +208,6 @@ impl DbFile {
         let offset = (page_id * PAGE_SIZE) as u64;
         file.seek(SeekFrom::Start(offset))
             .expect("Could not seek to offset");
-        println!("wrote {:?} bytes from offset {}",
-                 file.write(data), offset);
         file.flush().expect("flush failed");
     }
 
@@ -354,25 +354,27 @@ impl DbFile {
     fn allocate_new_page(&mut self) -> usize {
         // we're about to bring in new page, so write existing one
         self.write_buffer();
-
-        let page_id = if self.num_free == 0 {
-            self.free_page
-        } else {
-            let p = self.free_list;
-            self.get_page(p.unwrap());
-            self.free_list = self.buffer.next;
-            self.num_free -= 1;
-            p.unwrap()
+        let p = self.free_list;
+        let page_id = p.expect("no page in free_list");
+        println!("[allocate_new_page] allocating page_id: {}", page_id);
+        self.get_page(page_id);
+        self.free_list = match self.buffer.next {
+            Some(0) | None => {
+                self.num_pages += 1;
+                Some(self.num_pages)
+            },
+            _ => {
+                self.num_free -= 1;
+                self.buffer.next
+            },
         };
 
         let new_page = Page::new(self.keysize, self.valsize);
-
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
         self.dirty = false;
         self.write_buffer();
-        self.free_page += 1;
 
         page_id
     }
@@ -383,13 +385,15 @@ impl DbFile {
         let mut all_records = self.all_records_in_bucket(bucket_id);
         let records = flatten(all_records.clone());
 
-        let bucket_len = all_records.len();
         // Add overflow pages to free_list
+        let bucket_len = all_records.len();
         if bucket_len > 1 {
-            let (last_page_id, _) = all_records.pop().unwrap();
+            // second page onwards are overflow pages
+            let (second_page_id, _) = all_records[1];
+            println!("[clear_bucket] adding overflow chain starting page {} to free_list", second_page_id);
             let temp = self.free_list;
-            self.free_list = Some(last_page_id);
-            self.get_page(last_page_id);
+            self.free_list = Some(second_page_id);
+            self.get_page(second_page_id);
             // overflow pages only
             self.num_free += bucket_len - 1;
             self.buffer.next = temp;

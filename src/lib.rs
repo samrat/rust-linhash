@@ -161,11 +161,10 @@ impl LinHash {
                     },
                     // new insert, in overflow page
                     (Some(last_page_id), None, None) => {
-                        println!("allocating new buffer for bucket: {}", bucket_index);
                         // overflow
                         let (overflow_page_id, pos) =
                             self.buckets.allocate_overflow(bucket_index, last_page_id);
-                        self.buckets.write_record_incr(overflow_page_id, pos, key, val);
+                        self.put(key, val);
                     },
                     _ => panic!("impossible case"),
                 }

@@ -24,7 +24,7 @@ fn measure_perf(num_iters: i32) {
         }
 
         let time_get = Instant::now();
-        for k in 100..900 {
+        for k in 1000..9000 {
             assert_eq!(h2.get(&util::i32_to_bytearray(k)),
                        Some(util::i32_to_bytearray(k+1).to_vec()));
             println!("{}", k);
@@ -35,7 +35,7 @@ fn measure_perf(num_iters: i32) {
         let new_now = Instant::now();
         println!("[insert+get]{} million records {:?}", i, new_now.duration_since(now));
         h2.close();
-        // fs::remove_file("/tmp/measure_perf");
+        fs::remove_file("/tmp/measure_perf");
     }
 
 }
@@ -68,7 +68,7 @@ fn main() {
     h.put("xinu3".as_bytes(), &[24]);
     h.close();
 
-    measure_perf(2);
+    measure_perf(3);
 
     println!("{:?}", h.get("rust3".as_bytes()));
 }
