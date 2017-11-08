@@ -95,18 +95,4 @@ impl Page {
     pub fn incr_num_records(&mut self) {
         self.num_records += 1;
     }
-
-    /// Lookup `key` in page.
-    pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        let num_records = self.num_records;
-
-        for i in 0..num_records {
-            let (k, v) = self.read_record(i);
-            if slices_eq(k, key) {
-                let v_vec = v.to_vec();
-                return Some(v_vec);
-            }
-        }
-        None
-    }
 }
