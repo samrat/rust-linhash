@@ -218,6 +218,7 @@ impl LinHash {
 mod tests {
     use LinHash;
     use std::fs;
+    use util::*;
 
     #[test]
     fn all_ops() {
@@ -257,5 +258,24 @@ mod tests {
 
         h2.close();
         fs::remove_file("/tmp/test_persistence");
+    }
+
+    // TODO: figure out a better testing strategy for this. This test
+    // currently inserts 10,000 records and checks that they are all
+    // there.
+    #[test]
+    fn test_overflow_and_splitting() {
+        let mut h = LinHash::open("/tmp/test_overflow_and_splitting", 4, 4);
+        for k in 0..10000 {
+            h.put(&i32_to_bytearray(k),
+                   &i32_to_bytearray(k+1));
+        }
+
+        for k in 0..10000 {
+            assert_eq!(h.get(&i32_to_bytearray(k)),
+                       Some(i32_to_bytearray(k+1).to_vec()));
+        }
+
+        fs::remove_file("/tmp/test_overflow_and_splitting");
     }
 }
