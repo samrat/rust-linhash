@@ -5,9 +5,7 @@ use std::fs::OpenOptions;
 use std::io::SeekFrom;
 use std::str;
 use std::mem;
-use std::fmt::Debug;
 
-use page;
 use page::{Page, PAGE_SIZE, HEADER_SIZE};
 use util::*;
 
@@ -60,7 +58,7 @@ impl DbFile {
 
         let mut buffers : VecDeque<Page> =
             VecDeque::with_capacity(NUM_BUFFERS);
-        for i in 0..NUM_BUFFERS {
+        for _i in 0..NUM_BUFFERS {
             buffers.push_back(Page::new(keysize, valsize));
         }
 
@@ -185,7 +183,7 @@ impl DbFile {
                 let offset = (page_id * PAGE_SIZE) as u64;
                 let mut new_page = Page::new(self.keysize, self.valsize);
                 new_page.id = page_id;
-                let buffer_index = (NUM_BUFFERS - 1);
+                let buffer_index = NUM_BUFFERS - 1;
 
                 self.file.seek(SeekFrom::Start(offset))
                     .expect("Could not seek to offset");
@@ -379,7 +377,7 @@ impl DbFile {
     /// Empties out root page for bucket. Overflow pages are added to
     /// `free_list`
     pub fn clear_bucket(&mut self, bucket_id: usize) -> Vec<(Vec<u8>,Vec<u8>)> {
-        let mut all_records = self.all_records_in_bucket(bucket_id);
+        let all_records = self.all_records_in_bucket(bucket_id);
         let records = flatten(all_records.clone());
 
         // Add overflow pages to free_list

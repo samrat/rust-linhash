@@ -1,7 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::mem;
-use std::fmt::Debug;
 use std::path::Path;
 
 // TODO: implement remove
@@ -10,7 +8,6 @@ pub mod util;
 pub mod page;
 pub mod disk;
 
-use page::Page;
 use disk::{DbFile,SearchResult};
 
 /// Linear Hashtable
@@ -19,8 +16,6 @@ pub struct LinHash {
     nbits: usize,               // no of bits used from hash
     nitems: usize,              // number of items in hashtable
     nbuckets: usize,            // number of buckets
-    keysize: usize,             // size of keys
-    valsize: usize,             // size of vals
 }
 
 impl LinHash {
@@ -43,8 +38,6 @@ impl LinHash {
             nbits: nbits,
             nitems: nitems,
             nbuckets: nbuckets,
-            keysize: keysize,
-            valsize: valsize,
         }
     }
 
@@ -107,7 +100,6 @@ impl LinHash {
             // Re-hash all records in old_bucket. Ideally, about half
             // of the records will go into the new bucket.
             for (k, v) in old_bucket_records.into_iter() {
-                let bucket_index = self.bucket(&k);
                 self.reinsert(&k, &v);
             }
             return true
@@ -138,7 +130,6 @@ impl LinHash {
                     _ => false,
                 }
             },
-            _ => false,
         }
     }
 
@@ -156,14 +147,12 @@ impl LinHash {
                         self.nitems += 1;
                     },
                     // case for update
-                    (Some(page_id), Some(pos), Some(_old_val)) => {
+                    (Some(_page_id), Some(pos), Some(_old_val)) => {
                         panic!("can't use put to reinsert old item: {:?}", (key, val));
                     },
                     // new insert, in overflow page
-                    (Some(last_page_id), None, None) => {
-                        // overflow
-                        let (overflow_page_id, pos) =
-                            self.buckets.allocate_overflow(bucket_index, last_page_id);
+                    (Some(last_page_id), None, None) => { // overflow
+                        self.buckets.allocate_overflow(bucket_index, last_page_id);
                         self.put(key, val);
                     },
                     _ => panic!("impossible case"),
@@ -192,7 +181,6 @@ impl LinHash {
                     _ => None,
                 }
             },
-            _ => None,
         }
     }
 
