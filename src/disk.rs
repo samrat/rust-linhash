@@ -3,7 +3,6 @@ use std::io::prelude::*;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::SeekFrom;
-use std::str;
 use std::mem;
 
 use page::{Page, PAGE_SIZE, HEADER_SIZE};
@@ -142,7 +141,6 @@ impl DbFile {
                            &self.ctrl_buffer.storage);
     }
 
-
     pub fn get_ctrl_page(&mut self) {
         self.file.seek(SeekFrom::Start(0))
             .expect("Could not seek to offset");
@@ -198,7 +196,7 @@ impl DbFile {
         }
     }
 
-    /// Writes data in `data` into page `page_id`
+    /// Writes data in `data` into page `page_id` in file.
     pub fn write_page(mut file: &File, page_id: usize, data: &[u8]) {
         let offset = (page_id * PAGE_SIZE) as u64;
         file.seek(SeekFrom::Start(offset))
@@ -240,21 +238,23 @@ impl DbFile {
     ///   2. there is not enough space in last page, returns
     ///      (last_page_id, None, None)
     pub fn search_bucket(&mut self, bucket_id: usize, key: &[u8]) -> SearchResult {
-        let all_records_in_bucket =
-            self.all_records_in_bucket(bucket_id);
-
+        let mut page_id = self.bucket_to_page(bucket_id);
+        let mut buffer_index = self.fetch_page(page_id);
         let mut first_free_row = SearchResult {
             page_id: None,
             row_num: None,
             val: None,
         };
+        loop {
+            buffer_index = self.fetch_page(page_id);
+            let next_page = self.buffers[buffer_index].next;
+            let page_records = self.all_records_in_page(page_id);
 
-        for (i, page_records) in all_records_in_bucket.into_iter() {
             let len = page_records.len();
             for (row_num, (k,v)) in page_records.into_iter().enumerate() {
                 if slices_eq(&k, key) {
                     return SearchResult{
-                        page_id: Some(i),
+                        page_id: Some(page_id),
                         row_num: Some(row_num),
                         val: Some(v)
                     }
@@ -266,10 +266,30 @@ impl DbFile {
             } else {
                 None
             };
-            first_free_row = SearchResult {
-                page_id: Some(i),
-                row_num: row_num,
-                val: None,
+
+            match (first_free_row.page_id, first_free_row.row_num) {
+                // this is the first free space for a row found, so
+                // keep track of it.
+                (Some(_), None) |
+                (None, _) => {
+                    first_free_row = SearchResult {
+                        page_id: Some(page_id),
+                        row_num: row_num,
+                        val: None,
+                    }
+                },
+                _ => (),
+            }
+
+            if let Some(p) = next_page {
+                println!("next page is: {}", p);
+                // page 0 is ctrl page
+                if p == 0 {
+                    break;
+                }
+                page_id = p;
+            } else {
+                break;
             }
         }
 
@@ -282,6 +302,7 @@ impl DbFile {
         let physical_index = self.allocate_new_page();
 
         let new_page_buffer_index = self.fetch_page(physical_index);
+        self.buffers[new_page_buffer_index].next = None;
         self.buffers[new_page_buffer_index].dirty = true;
 
         // Write next of old page
@@ -289,7 +310,10 @@ impl DbFile {
         self.buffers[old_page_buffer_index].next = Some(physical_index);
         self.buffers[old_page_buffer_index].dirty = true;
 
-        println!("setting next of buffer_id {}(page_id: {}) to {:?}", bucket_id, last_page_id, self.buffers[old_page_buffer_index].next);
+        println!("setting next of buffer_id {}(page_id: {}) to {:?}",
+                 bucket_id,
+                 self.buffers[old_page_buffer_index].id,
+                 self.buffers[old_page_buffer_index].next);
 
         (physical_index, 0)
     }
@@ -310,7 +334,6 @@ impl DbFile {
                            -> Vec<(Vec<u8>, Vec<u8>)> {
         let buffer_index = self.fetch_page(page_id);
         let mut page_records = vec![];
-        println!("buffer_index: {} num_records: {}", buffer_index, self.buffers[buffer_index].num_records);
         for i in 0..self.buffers[buffer_index].num_records {
             let (k, v) = self.buffers[buffer_index].read_record(i);
             let (dk, dv) = (k.to_vec(), v.to_vec());
