@@ -138,28 +138,6 @@ impl DbFile {
                            &self.ctrl_buffer.storage);
     }
 
-    fn read_header(&mut self) {
-        let num_records : usize = bytearray_to_usize(self.buffer.storage[0..8].to_vec());
-        let next : usize = bytearray_to_usize(self.buffer.storage[8..16].to_vec());
-        let prev : usize = bytearray_to_usize(self.buffer.storage[16..24].to_vec());
-        self.buffer.num_records = num_records;
-        self.buffer.next = if next != 0 {
-            Some(next)
-        } else {
-            None
-        };
-        self.buffer.prev = if prev != 0 {
-            Some(prev)
-        } else {
-            None
-        };
-    }
-
-    fn write_header(&mut self) {
-        mem_move(&mut self.buffer.storage[0..8], &usize_to_bytearray(self.buffer.num_records));
-        mem_move(&mut self.buffer.storage[8..16], &usize_to_bytearray(self.buffer.next.unwrap_or(0)));
-        mem_move(&mut self.buffer.storage[16..24], &usize_to_bytearray(self.buffer.prev.unwrap_or(0)));
-    }
 
     pub fn get_ctrl_page(&mut self) {
         self.file.seek(SeekFrom::Start(0))
@@ -197,7 +175,7 @@ impl DbFile {
 
                 self.page_id = Some(page_id);
                 self.buffer.id = page_id;
-                self.read_header();
+                self.buffer.read_header();
             },
         }
     }
@@ -307,7 +285,7 @@ impl DbFile {
     /// Write out page in `buffer` to file.
     pub fn write_buffer(&mut self) {
         self.buffer.dirty = false;
-        self.write_header();
+        self.buffer.write_header();
         DbFile::write_page(&mut self.file,
                            self.page_id.expect("No page buffered"),
                            &self.buffer.storage);

@@ -60,6 +60,30 @@ impl Page {
         }
     }
 
+
+    pub fn read_header(&mut self) {
+        let num_records : usize = bytearray_to_usize(self.storage[0..8].to_vec());
+        let next : usize = bytearray_to_usize(self.storage[8..16].to_vec());
+        let prev : usize = bytearray_to_usize(self.storage[16..24].to_vec());
+        self.num_records = num_records;
+        self.next = if next != 0 {
+            Some(next)
+        } else {
+            None
+        };
+        self.prev = if prev != 0 {
+            Some(prev)
+        } else {
+            None
+        };
+    }
+
+    pub fn write_header(&mut self) {
+        mem_move(&mut self.storage[0..8], &usize_to_bytearray(self.num_records));
+        mem_move(&mut self.storage[8..16], &usize_to_bytearray(self.next.unwrap_or(0)));
+        mem_move(&mut self.storage[16..24], &usize_to_bytearray(self.prev.unwrap_or(0)));
+    }
+
     pub fn read_record(&mut self, row_num: usize) -> (&[u8], &[u8]) {
         let offsets = self.compute_offsets(row_num);
         let key = &self.storage[offsets.key_offset..offsets.val_offset];
