@@ -270,9 +270,11 @@ mod tests {
             h.put(&i32_to_bytearray(k),
                    &i32_to_bytearray(k+1));
         }
+        h.close();
 
+        let mut h2 = LinHash::open("/tmp/test_overflow_and_splitting", 4, 4);
         for k in 0..10000 {
-            assert_eq!(h.get(&i32_to_bytearray(k)),
+            assert_eq!(h2.get(&i32_to_bytearray(k)),
                        Some(i32_to_bytearray(k+1).to_vec()));
         }
 
