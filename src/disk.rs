@@ -34,8 +34,6 @@ pub struct DbFile {
     // which page is currently in `buffer`
     page_id: Option<usize>,
     pub records_per_page: usize,
-    // changes made to `buffer`?
-    dirty: bool,
     bucket_to_page: Vec<usize>,
     keysize: usize,
     valsize: usize,
@@ -66,7 +64,6 @@ impl DbFile {
             buffer: Page::new(keysize, valsize),
             page_id: None,
             records_per_page: records_per_page,
-            dirty: false,
             bucket_to_page: vec![1, 2],
             keysize: keysize,
             valsize: valsize,
@@ -185,12 +182,12 @@ impl DbFile {
         match self.page_id {
             Some(p) if p == page_id => (),
             Some(_) | None => {
-                if self.dirty {
+                if self.buffer.dirty {
                     self.write_buffer();
                 }
-                self.dirty = false;
+                self.buffer.dirty = false;
                 // clear out buffer
-                mem::replace(&mut self.buffer.storage, [0; 4096]);
+                mem::replace(&mut self.buffer.storage, [0; PAGE_SIZE]);
 
                 let offset = (page_id * PAGE_SIZE) as u64;
                 self.file.seek(SeekFrom::Start(offset))
@@ -223,7 +220,7 @@ impl DbFile {
                         val: &[u8]) {
         self.get_page(page_id);
 
-        self.dirty = true;
+        self.buffer.dirty = true;
         self.buffer.write_record(row_num, key, val);
     }
 
@@ -303,13 +300,13 @@ impl DbFile {
     pub fn put(&mut self, bucket_id: usize, key: &[u8], val: &[u8]) {
         println!("[put] key: {:?}, bucket_id: {}", key, bucket_id);
         self.get_bucket(bucket_id);
-        self.dirty = true;
+        self.buffer.dirty = true;
         self.buffer.put(key, val);
     }
 
     /// Write out page in `buffer` to file.
     pub fn write_buffer(&mut self) {
-        self.dirty = false;
+        self.buffer.dirty = false;
         self.write_header();
         DbFile::write_page(&mut self.file,
                            self.page_id.expect("No page buffered"),
@@ -376,7 +373,7 @@ impl DbFile {
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
-        self.dirty = false;
+        self.buffer.dirty = false;
         self.write_buffer();
 
         page_id
@@ -407,7 +404,7 @@ impl DbFile {
         mem::replace(&mut self.buffer, new_page);
         self.buffer.id = page_id;
         self.page_id = Some(page_id);
-        self.dirty = false;
+        self.buffer.dirty = false;
         self.write_buffer();
 
         records
@@ -433,6 +430,10 @@ mod tests {
         let bark = "bark".as_bytes();
         let krab = "krab".as_bytes();
         bp.write_record(0, 14, bark, krab);
+        assert_eq!(bp.buffer.read_record(14), (bark, krab));
+        bp.close();
+
+        let mut bp2 = DbFile::new("/tmp/buff", 4, 4);
         assert_eq!(bp.buffer.read_record(14), (bark, krab));
     }
 }

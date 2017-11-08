@@ -14,6 +14,7 @@ pub struct Page {
     pub next: Option<usize>,
     // prev bucket in linked list(of overflow buckets)
     pub prev: Option<usize>,
+    pub dirty: bool,
 
     keysize: usize,
     valsize: usize,
@@ -38,6 +39,7 @@ impl Page {
             prev: None,
             keysize: keysize,
             valsize: valsize,
+            dirty: false,
         }
     }
 
@@ -93,9 +95,8 @@ impl Page {
 
         for i in 0..num_records {
             let (k, v) = self.read_record(i);
-            let v_vec = v.to_vec();
-            println!("{:?}", str::from_utf8(&k));
             if slices_eq(k, key) {
+                let v_vec = v.to_vec();
                 return Some(v_vec);
             }
         }
