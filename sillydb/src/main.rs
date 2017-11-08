@@ -63,7 +63,7 @@ fn main() {
     h.put("xinu3".as_bytes(), &[24]);
     h.close();
 
-    measure_perf(3);
+    measure_perf(2);
 
     println!("{:?}", h.get("rust3".as_bytes()));
 }

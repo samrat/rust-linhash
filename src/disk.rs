@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::prelude::*;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -11,6 +12,7 @@ use page::{Page, PAGE_SIZE, HEADER_SIZE};
 use util::*;
 
 const CTRL_HEADER_SIZE : usize = 32; // bytes
+const NUM_BUFFERS : usize = 16;
 
 pub struct SearchResult {
     pub page_id: Option<usize>,
@@ -30,9 +32,7 @@ pub struct DbFile {
     path: String,
     file: File,
     ctrl_buffer: Page,
-    pub buffer: Page,
-    // which page is currently in `buffer`
-    page_id: Option<usize>,
+    pub buffers: VecDeque<Page>,
     pub records_per_page: usize,
     bucket_to_page: Vec<usize>,
     keysize: usize,
@@ -57,12 +57,18 @@ impl DbFile {
 
         let total_size = keysize + valsize;
         let records_per_page = (PAGE_SIZE - HEADER_SIZE) / total_size;
+
+        let mut buffers : VecDeque<Page> =
+            VecDeque::with_capacity(NUM_BUFFERS);
+        for i in 0..NUM_BUFFERS {
+            buffers.push_back(Page::new(keysize, valsize));
+        }
+
         DbFile {
             path: String::from(filename),
             file: file,
             ctrl_buffer: Page::new(0, 0),
-            buffer: Page::new(keysize, valsize),
-            page_id: None,
+            buffers: buffers,
             records_per_page: records_per_page,
             bucket_to_page: vec![1, 2],
             keysize: keysize,
@@ -150,33 +156,48 @@ impl DbFile {
         self.bucket_to_page[bucket_id]
     }
 
-    fn get_bucket(&mut self, bucket_id: usize) {
-        let page_id = self.bucket_to_page(bucket_id);
-        self.get_page(page_id);
+    fn search_buffer_pool(&self, page_id: usize) -> Option<usize> {
+        for (i, b) in self.buffers.iter().enumerate() {
+            if b.id == page_id {
+                return Some(i);
+            }
+        }
+        None
     }
 
-    // Reads page to self.buffer
-    pub fn get_page(&mut self, page_id: usize) {
-        match self.page_id {
-            Some(p) if p == page_id => (),
-            Some(_) | None => {
-                if self.buffer.dirty {
-                    self.write_buffer();
+    /// Reads page to self.buffer
+    pub fn fetch_page(&mut self, page_id: usize) -> usize {
+        let bufpool_index = self.search_buffer_pool(page_id);
+        match bufpool_index {
+            None => {
+                match self.buffers.pop_front() {
+                    Some(mut old_page) => {
+                        if old_page.dirty {
+                            old_page.write_header();
+                            DbFile::write_page(&self.file,
+                                               old_page.id,
+                                               &old_page.storage);
+                        }
+                    },
+                    _ => (),
                 }
-                self.buffer.dirty = false;
-                // clear out buffer
-                mem::replace(&mut self.buffer.storage, [0; PAGE_SIZE]);
 
                 let offset = (page_id * PAGE_SIZE) as u64;
+                let mut new_page = Page::new(self.keysize, self.valsize);
+                new_page.id = page_id;
+                let buffer_index = (NUM_BUFFERS - 1);
+
                 self.file.seek(SeekFrom::Start(offset))
                     .expect("Could not seek to offset");
-                self.file.read(&mut self.buffer.storage)
+                self.file.read(&mut new_page.storage)
                     .expect("Could not read file");
+                self.buffers.push_back(new_page);
+                // println!("[fetch_page] id: {} {:?}", self.buffers[15].id, self.buffers[15].storage.to_vec());
+                self.buffers[buffer_index].read_header();
 
-                self.page_id = Some(page_id);
-                self.buffer.id = page_id;
-                self.buffer.read_header();
+                buffer_index
             },
+            Some(p) => p,
         }
     }
 
@@ -196,17 +217,17 @@ impl DbFile {
                         row_num: usize,
                         key: &[u8],
                         val: &[u8]) {
-        self.get_page(page_id);
-
-        self.buffer.dirty = true;
-        self.buffer.write_record(row_num, key, val);
+        let buffer_index = self.fetch_page(page_id);
+        self.buffers[buffer_index].dirty = true;
+        self.buffers[buffer_index].write_record(row_num, key, val);
     }
 
     /// Write record and increment `num_records`. Used when inserting
     /// new record.
     pub fn write_record_incr(&mut self, page_id: usize, row_num: usize,
                              key: &[u8], val: &[u8]) {
-        self.buffer.incr_num_records();
+        let buffer_index = self.fetch_page(page_id);
+        self.buffers[buffer_index].incr_num_records();
         self.write_record(page_id, row_num, key, val);
     }
 
@@ -262,66 +283,68 @@ impl DbFile {
     pub fn allocate_overflow(&mut self, bucket_id: usize,
                              last_page_id: usize) -> (usize, usize) {
         let physical_index = self.allocate_new_page();
-        self.get_page(physical_index);
-        self.buffer.prev = Some(last_page_id);
-        self.write_buffer();
+
+        let new_page_buffer_index = self.fetch_page(physical_index);
+        self.buffers[new_page_buffer_index].prev = Some(last_page_id);
+        self.buffers[new_page_buffer_index].dirty = true;
 
         // Write next of old page
-        self.get_page(last_page_id);
-        self.buffer.next = Some(physical_index);
-        self.write_buffer();
-        println!("setting next of buffer_id {}(page_id: {}) to {:?}", bucket_id, last_page_id, self.buffer.next);
+        let old_page_buffer_index = self.fetch_page(last_page_id);
+        self.buffers[old_page_buffer_index].next = Some(physical_index);
+        self.buffers[old_page_buffer_index].dirty = true;
+
+        println!("setting next of buffer_id {}(page_id: {}) to {:?}", bucket_id, last_page_id, self.buffers[old_page_buffer_index].next);
 
         (physical_index, 0)
     }
 
-    pub fn put(&mut self, bucket_id: usize, key: &[u8], val: &[u8]) {
-        println!("[put] key: {:?}, bucket_id: {}", key, bucket_id);
-        self.get_bucket(bucket_id);
-        self.buffer.dirty = true;
-        self.buffer.put(key, val);
+    /// Write out page in bufferpool to file.
+    pub fn write_buffer_page(&mut self, buffer_index: usize) {
+        // Ignore page 0(ctrlpage)
+        if self.buffers[buffer_index].id != 0 {
+            self.buffers[buffer_index].dirty = false;
+            self.buffers[buffer_index].write_header();
+            DbFile::write_page(&mut self.file,
+                               self.buffers[buffer_index].id,
+                               &self.buffers[buffer_index].storage);
+        }
     }
 
-    /// Write out page in `buffer` to file.
-    pub fn write_buffer(&mut self) {
-        self.buffer.dirty = false;
-        self.buffer.write_header();
-        DbFile::write_page(&mut self.file,
-                           self.page_id.expect("No page buffered"),
-                           &self.buffer.storage);
+    fn all_records_in_page(&mut self, page_id: usize)
+                           -> Vec<(Vec<u8>, Vec<u8>)> {
+        let buffer_index = self.fetch_page(page_id);
+        let mut page_records = vec![];
+        println!("buffer_index: {} num_records: {}", buffer_index, self.buffers[buffer_index].num_records);
+        for i in 0..self.buffers[buffer_index].num_records {
+            let (k, v) = self.buffers[buffer_index].read_record(i);
+            let (dk, dv) = (k.to_vec(), v.to_vec());
+            page_records.push((dk, dv));
+        }
+
+        page_records
     }
 
     /// Returns a vec of (page_id, records_in_vec). ie. each inner
     /// vector represents the records in a page in the bucket.
     fn all_records_in_bucket(&mut self, bucket_id: usize)
                              -> Vec<(usize, Vec<(Vec<u8>,Vec<u8>)>)> {
-        self.get_bucket(bucket_id);
+        let first_page_id = self.bucket_to_page(bucket_id);
+        let buffer_index = self.fetch_page(first_page_id);
         let mut records = Vec::new();
+        records.push((self.buffers[buffer_index].id,
+                      self.all_records_in_page(first_page_id)));
 
-        let mut page_records = vec![];
-        for i in 0..self.buffer.num_records {
-            let (k, v) = self.buffer.read_record(i);
-            let (dk, dv) = (k.to_vec(), v.to_vec());
-            page_records.push((dk, dv));
-        }
-        records.push((self.page_id.unwrap(), page_records));
-
-        while let Some(page_id) = self.buffer.next {
-            println!("[all_records_in_bucket] bucket_id: {} page_id: {}",
-                     bucket_id, page_id);
+        let mut next_page = self.buffers[buffer_index].next;
+        while let Some(page_id) = next_page {
             if page_id == 0 {
                 break;
             }
 
-            self.get_page(page_id);
-            let mut page_records = vec![];
-            for i in 0..self.buffer.num_records {
-                let (k, v) = self.buffer.read_record(i);
-                let (dk, dv) = (k.to_vec(), v.to_vec());
+            let buffer_index = self.fetch_page(page_id);
+            records.push((page_id,
+                          self.all_records_in_page(page_id)));
 
-                page_records.push((dk, dv));
-            }
-            records.push((page_id, page_records));
+            next_page = self.buffers[buffer_index].next;
         }
 
         records
@@ -330,29 +353,28 @@ impl DbFile {
     /// Allocate a new page. If available uses recycled overflow
     /// pages.
     fn allocate_new_page(&mut self) -> usize {
-        // we're about to bring in new page, so write existing one
-        self.write_buffer();
         let p = self.free_list;
         let page_id = p.expect("no page in free_list");
         println!("[allocate_new_page] allocating page_id: {}", page_id);
-        self.get_page(page_id);
-        self.free_list = match self.buffer.next {
+        let buffer_index = self.fetch_page(page_id);
+
+        self.free_list = match self.buffers[buffer_index].next {
             Some(0) | None => {
                 self.num_pages += 1;
                 Some(self.num_pages)
             },
             _ => {
                 self.num_free -= 1;
-                self.buffer.next
+                self.buffers[buffer_index].next
             },
         };
 
         let new_page = Page::new(self.keysize, self.valsize);
-        mem::replace(&mut self.buffer, new_page);
-        self.buffer.id = page_id;
-        self.page_id = Some(page_id);
-        self.buffer.dirty = false;
-        self.write_buffer();
+        mem::replace(&mut self.buffers[buffer_index], new_page);
+        self.buffers[buffer_index].id = page_id;
+        self.buffers[buffer_index].dirty = false;
+        self.buffers[buffer_index].next = None;
+        self.buffers[buffer_index].prev = None;
 
         page_id
     }
@@ -371,19 +393,21 @@ impl DbFile {
             println!("[clear_bucket] adding overflow chain starting page {} to free_list", second_page_id);
             let temp = self.free_list;
             self.free_list = Some(second_page_id);
-            self.get_page(second_page_id);
+
+            let second_page_buffer_index =
+                self.fetch_page(second_page_id);
             // overflow pages only
             self.num_free += bucket_len - 1;
-            self.buffer.next = temp;
+            self.buffers[second_page_buffer_index].next = temp;
         }
 
         let page_id = self.bucket_to_page(bucket_id);
+        let buffer_index = self.fetch_page(page_id);
         let new_page = Page::new(self.keysize, self.valsize);
-        mem::replace(&mut self.buffer, new_page);
-        self.buffer.id = page_id;
-        self.page_id = Some(page_id);
-        self.buffer.dirty = false;
-        self.write_buffer();
+        mem::replace(&mut self.buffers[buffer_index], new_page);
+        self.buffers[buffer_index].id = page_id;
+        self.buffers[buffer_index].dirty = false;
+        self.write_buffer_page(buffer_index);
 
         records
     }
@@ -394,7 +418,9 @@ impl DbFile {
     }
 
     pub fn close(&mut self) {
-        self.write_buffer();
+        for b in 0..NUM_BUFFERS {
+            self.write_buffer_page(b);
+        }
     }
 }
 
@@ -408,10 +434,10 @@ mod tests {
         let bark = "bark".as_bytes();
         let krab = "krab".as_bytes();
         bp.write_record(0, 14, bark, krab);
-        assert_eq!(bp.buffer.read_record(14), (bark, krab));
+        assert_eq!(bp.buffers[0].read_record(14), (bark, krab));
         bp.close();
 
         let mut bp2 = DbFile::new("/tmp/buff", 4, 4);
-        assert_eq!(bp.buffer.read_record(14), (bark, krab));
+        assert_eq!(bp.buffers[0].read_record(14), (bark, krab));
     }
 }
