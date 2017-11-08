@@ -192,7 +192,6 @@ impl DbFile {
                 self.file.read(&mut new_page.storage)
                     .expect("Could not read file");
                 self.buffers.push_back(new_page);
-                // println!("[fetch_page] id: {} {:?}", self.buffers[15].id, self.buffers[15].storage.to_vec());
                 self.buffers[buffer_index].read_header();
 
                 buffer_index
@@ -285,7 +284,6 @@ impl DbFile {
         let physical_index = self.allocate_new_page();
 
         let new_page_buffer_index = self.fetch_page(physical_index);
-        self.buffers[new_page_buffer_index].prev = Some(last_page_id);
         self.buffers[new_page_buffer_index].dirty = true;
 
         // Write next of old page
@@ -374,7 +372,6 @@ impl DbFile {
         self.buffers[buffer_index].id = page_id;
         self.buffers[buffer_index].dirty = false;
         self.buffers[buffer_index].next = None;
-        self.buffers[buffer_index].prev = None;
 
         page_id
     }

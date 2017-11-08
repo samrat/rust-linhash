@@ -4,7 +4,7 @@ use util::*;
 use std::str;
 
 pub const PAGE_SIZE : usize = 4096; // bytes
-pub const HEADER_SIZE : usize = 24; // bytes
+pub const HEADER_SIZE : usize = 16; // bytes
 
 pub struct Page {
     pub id: usize,
@@ -12,8 +12,6 @@ pub struct Page {
     pub num_records: usize,
     // page_id of overflow bucket
     pub next: Option<usize>,
-    // prev bucket in linked list(of overflow buckets)
-    pub prev: Option<usize>,
     pub dirty: bool,
 
     keysize: usize,
@@ -36,7 +34,6 @@ impl Page {
             num_records: 0,
             storage: [0; PAGE_SIZE],
             next: None,
-            prev: None,
             keysize: keysize,
             valsize: valsize,
             dirty: false,
@@ -64,15 +61,9 @@ impl Page {
     pub fn read_header(&mut self) {
         let num_records : usize = bytearray_to_usize(self.storage[0..8].to_vec());
         let next : usize = bytearray_to_usize(self.storage[8..16].to_vec());
-        let prev : usize = bytearray_to_usize(self.storage[16..24].to_vec());
         self.num_records = num_records;
         self.next = if next != 0 {
             Some(next)
-        } else {
-            None
-        };
-        self.prev = if prev != 0 {
-            Some(prev)
         } else {
             None
         };
@@ -81,7 +72,6 @@ impl Page {
     pub fn write_header(&mut self) {
         mem_move(&mut self.storage[0..8], &usize_to_bytearray(self.num_records));
         mem_move(&mut self.storage[8..16], &usize_to_bytearray(self.next.unwrap_or(0)));
-        mem_move(&mut self.storage[16..24], &usize_to_bytearray(self.prev.unwrap_or(0)));
     }
 
     pub fn read_record(&mut self, row_num: usize) -> (&[u8], &[u8]) {
@@ -103,13 +93,6 @@ impl Page {
 
     /// Increment number of records in page
     pub fn incr_num_records(&mut self) {
-        self.num_records += 1;
-    }
-
-    /// Insert record into page. Row number is not necessary here.
-    pub fn put(&mut self, key: &[u8], val: &[u8]) {
-        let row_num = self.num_records;
-        self.write_record(row_num, key, val);
         self.num_records += 1;
     }
 
