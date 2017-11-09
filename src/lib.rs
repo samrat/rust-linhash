@@ -85,9 +85,9 @@ impl LinHash {
                 self.nbits += 1;
             }
 
-            // Take index of last item added(the `push` above) and
-            // subtract the 1 at the MSB position. eg: after bucket 11
-            // is added, bucket 01 needs to be split
+            // Take index of last item added and subtract the 1 at the
+            // MSB position. eg: after bucket 11 is added, bucket 01
+            // needs to be split
             let bucket_to_split =
                 (self.nbuckets-1) ^ (1 << (self.nbits-1));
             println!("nbits: {} nitems: {} nbuckets: {} splitting {} and {}",
@@ -135,11 +135,9 @@ impl LinHash {
 
     /// Insert (key,value) pair into the hashtable.
     pub fn put(&mut self, key: &[u8], val: &[u8]) {
-        println!("[put] {:?}", (key.clone(), val.clone()));
         let bucket_index = self.bucket(&key);
         match self.buckets.search_bucket(bucket_index, key.clone()) {
             SearchResult { page_id, row_num, val: old_val } => {
-                println!("[put] {:?} {:?}", key, (page_id, row_num, old_val.clone()));
                 match (page_id, row_num, old_val) {
                     // new insert
                     (Some(page_id), Some(pos), None) => {
@@ -211,21 +209,21 @@ mod tests {
     #[test]
     fn all_ops() {
         let mut h = LinHash::open("/tmp/test_all_ops", 32, 4);
-        h.put("hello".as_bytes(), &[12]);
-        h.put("there".as_bytes(), &[13]);
-        h.put("foo".as_bytes(), &[42]);
-        h.put("bar".as_bytes(), &[11]);
-        h.update("bar".as_bytes(), &[22]);
-        h.update("foo".as_bytes(), &[84]);
+        h.put(b"hello", &[12]);
+        h.put(b"there", &[13]);
+        h.put(b"foo", &[42]);
+        h.put(b"bar", &[11]);
+        h.update(b"bar", &[22]);
+        h.update(b"foo", &[84]);
 
-        assert_eq!(h.get("hello".as_bytes()), Some(vec![12, 0, 0, 0]));
-        assert_eq!(h.get("there".as_bytes()), Some(vec![13, 0, 0, 0]));
-        assert_eq!(h.get("foo".as_bytes()), Some(vec![84, 0, 0, 0]));
-        assert_eq!(h.get("bar".as_bytes()), Some(vec![22, 0, 0, 0]));
+        assert_eq!(h.get(b"hello"), Some(vec![12, 0, 0, 0]));
+        assert_eq!(h.get(b"there"), Some(vec![13, 0, 0, 0]));
+        assert_eq!(h.get(b"foo"), Some(vec![84, 0, 0, 0]));
+        assert_eq!(h.get(b"bar"), Some(vec![22, 0, 0, 0]));
 
         // assert_eq!(h.update(String::from("doesn't exist"), 99), false);
-        assert_eq!(h.contains("doesn't exist".as_bytes()), false);
-        assert_eq!(h.contains("hello".as_bytes()), true);
+        assert_eq!(h.contains(b"doesn't exist"), false);
+        assert_eq!(h.contains(b"hello"), true);
 
         h.close();
         fs::remove_file("/tmp/test_all_ops");
@@ -234,15 +232,15 @@ mod tests {
     #[test]
     fn test_persistence() {
         let mut h = LinHash::open("/tmp/test_persistence", 32, 4);
-        h.put("hello".as_bytes(), &[12]);
-        h.put("world".as_bytes(), &[13]);
-        h.put("linear".as_bytes(), &[144]);
-        h.put("hashing".as_bytes(), &[255]);
+        h.put(b"hello", &[12]);
+        h.put(b"world", &[13]);
+        h.put(b"linear", &[144]);
+        h.put(b"hashing", &[255]);
         h.close();
 
         // This reloads the file and creates a new hashtable
         let mut h2 = LinHash::open("/tmp/test_persistence", 32, 4);
-        assert_eq!(h2.get("hello".as_bytes()), Some(vec![12, 0, 0, 0]));
+        assert_eq!(h2.get(b"hello"), Some(vec![12, 0, 0, 0]));
 
         h2.close();
         fs::remove_file("/tmp/test_persistence");

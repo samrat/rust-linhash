@@ -37,30 +37,30 @@ fn measure_perf(num_iters: i32) {
 
 fn main() {
     let mut h = LinHash::open("/tmp/main_tests", 32, 4);
-    h.put("Spin".as_bytes(), &i32_to_bytearray(9));
-    h.put("Axis".as_bytes(), &i32_to_bytearray(6));
-    h.put("foo".as_bytes(), &[14]);
-    h.put("bar".as_bytes(), &[15]);
-    h.put("linear".as_bytes(), &[16]);
-    h.put("hashing".as_bytes(), &[17]);
-    h.put("disk".as_bytes(), &[18]);
-    h.put("space".as_bytes(), &[19]);
-    h.put("random".as_bytes(), &[20]);
-    h.put("keys".as_bytes(), &[21]);
-    h.put("samrat".as_bytes(), &[22]);
-    h.put("linhash".as_bytes(), &[21]);
-    h.put("rust".as_bytes(), &[21]);
-    h.put("3:30".as_bytes(), &[21]);
-    h.put("xinu".as_bytes(), &[21]);
-    h.put("linhash1".as_bytes(), &[21]);
-    h.put("rust1".as_bytes(), &[22]);
-    h.put("rust2".as_bytes(), &[51]);
-    h.put("rust3".as_bytes(), &[52]);
-    h.put("rust4".as_bytes(), &[53]);
-    h.put("rust5".as_bytes(), &[54]);
+    h.put(b"Spin", &i32_to_bytearray(9));
+    h.put(b"Axis", &i32_to_bytearray(6));
+    h.put(b"foo", &[14]);
+    h.put(b"bar", &[15]);
+    h.put(b"linear", &[16]);
+    h.put(b"hashing", &[17]);
+    h.put(b"disk", &[18]);
+    h.put(b"space", &[19]);
+    h.put(b"random", &[20]);
+    h.put(b"keys", &[21]);
+    h.put(b"samrat", &[22]);
+    h.put(b"linhash", &[21]);
+    h.put(b"rust", &[21]);
+    h.put(b"3:30", &[21]);
+    h.put(b"xinu", &[21]);
+    h.put(b"linhash1", &[21]);
+    h.put(b"rust1", &[22]);
+    h.put(b"rust2", &[51]);
+    h.put(b"rust3", &[52]);
+    h.put(b"rust4", &[53]);
+    h.put(b"rust5", &[54]);
 
-    h.update("rust1".as_bytes(), &[99]);
-    h.put("xinu3".as_bytes(), &[24]);
+    h.update(b"rust1", &[99]);
+    h.put(b"xinu3", &[24]);
     h.close();
 
     measure_perf(2);

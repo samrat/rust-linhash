@@ -239,7 +239,7 @@ impl DbFile {
     ///      (last_page_id, None, None)
     pub fn search_bucket(&mut self, bucket_id: usize, key: &[u8]) -> SearchResult {
         let mut page_id = self.bucket_to_page(bucket_id);
-        let mut buffer_index = self.fetch_page(page_id);
+        let mut buffer_index;
         let mut first_free_row = SearchResult {
             page_id: None,
             row_num: None,
@@ -282,11 +282,6 @@ impl DbFile {
             }
 
             if let Some(p) = next_page {
-                println!("next page is: {}", p);
-                // page 0 is ctrl page
-                if p == 0 {
-                    break;
-                }
                 page_id = p;
             } else {
                 break;
