@@ -1,5 +1,4 @@
 use util::*;
-use std::str;
 
 pub const PAGE_SIZE : usize = 4096; // bytes
 pub const HEADER_SIZE : usize = 16; // bytes
