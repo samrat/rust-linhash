@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(h.contains(b"hello"), true);
 
         h.close();
-        fs::remove_file("/tmp/test_all_ops");
+        fs::remove_file("/tmp/test_all_ops").ok();
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(h2.get(b"hello"), Some(vec![12, 0, 0, 0]));
 
         h2.close();
-        fs::remove_file("/tmp/test_persistence");
+        fs::remove_file("/tmp/test_persistence").ok();
     }
 
     // TODO: figure out a better testing strategy for this. This test
@@ -264,6 +264,6 @@ mod tests {
                        Some(i32_to_bytearray(k+1).to_vec()));
         }
 
-        fs::remove_file("/tmp/test_overflow_and_splitting");
+        fs::remove_file("/tmp/test_overflow_and_splitting").ok();
     }
 }

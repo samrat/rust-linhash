@@ -8,7 +8,6 @@ use std::mem;
 use page::{Page, PAGE_SIZE, HEADER_SIZE};
 use util::*;
 
-const CTRL_HEADER_SIZE : usize = 32; // bytes
 const NUM_BUFFERS : usize = 16;
 
 pub struct SearchResult {
@@ -79,7 +78,7 @@ impl DbFile {
     // Control page layout:
     //
     // | nbits | nitems | nbuckets | num_pages | free_list root |
-    // num_free | bucket_to_page mapping .... |
+    // num_free | bucket_to_page mappings .... |
     pub fn read_ctrlpage(&mut self) -> (usize, usize, usize) {
         self.get_ctrl_page();
         let nbits : usize = bytearray_to_usize(self.ctrl_buffer.storage[0..8].to_vec());
@@ -440,17 +439,25 @@ impl DbFile {
 #[cfg(test)]
 mod tests {
     use DbFile;
+    use std::fs;
 
     #[test]
     fn dbfile_tests () {
-        let mut bp = DbFile::new("/tmp/buff", 4, 4);
-        let bark = "bark".as_bytes();
-        let krab = "krab".as_bytes();
-        bp.write_record(0, 14, bark, krab);
-        assert_eq!(bp.buffers[0].read_record(14), (bark, krab));
+        let mut bp = DbFile::new("/tmp/dbfile_tests", 4, 4);
+        let bark = b"bark";
+        let krab = b"krab";
+        // write to page 1
+        bp.write_record(1, 14, bark, krab);
+        assert_eq!(bp.buffers[NUM_BUFFERS-1].read_record(14),
+                   (bark, krab));
         bp.close();
 
-        let mut bp2 = DbFile::new("/tmp/buff", 4, 4);
-        assert_eq!(bp.buffers[0].read_record(14), (bark, krab));
+        let mut bp2 = DbFile::new("/tmp/dbfile_tests", 4, 4);
+        // read from page 1
+        let buffer_index = bp2.fetch_page(1);
+        assert_eq!(bp2.buffers[buffer_index].read_record(14),
+                   (bark, krab));
+
+        fs::remove_file("/tmp/dbfile_tests").ok();
     }
 }
